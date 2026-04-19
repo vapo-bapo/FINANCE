@@ -3,8 +3,6 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-
-  <!-- PWA / iOS -->
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="Finanze"/>
@@ -12,1118 +10,1212 @@
   <meta name="theme-color" content="#fafaf7"/>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon.svg"/>
-
   <title>Le mie finanze</title>
-
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,400;0,500;0,600;0,700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet"/>
-
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
     body {
       font-family: 'Inter Tight', -apple-system, system-ui, sans-serif;
-      background: #fafaf7;
-      color: #111;
+      background: #fafaf7; color: #111;
       -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
       overscroll-behavior: none;
-      /* safe area variables for quick access */
-      --sat: env(safe-area-inset-top);
-      --sab: env(safe-area-inset-bottom);
-      --sal: env(safe-area-inset-left);
-      --sar: env(safe-area-inset-right);
     }
     #root { height: 100dvh; display: flex; flex-direction: column; }
     button, input, textarea { font-family: inherit; -webkit-tap-highlight-color: transparent; }
     ::-webkit-scrollbar { width: 0; height: 0; }
     input { -webkit-appearance: none; border-radius: 0; }
-    /* smooth momentum scrolling on iOS */
     .scroll-area { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
   </style>
-
   <script>
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator)
       window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
-    }
   </script>
 </head>
 <body>
-  <div id="root"></div>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
-  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<!-- ─── STATE ──────────────────────────────────────────────── -->
+<script type="text/babel">
+  const { useState, useEffect, useMemo, useCallback } = React;
 
-  <!-- ─── STATE / DATA ─────────────────────────────────────── -->
-  <script type="text/babel">
-    const { useState, useEffect, useMemo, useCallback } = React;
+  const ACCENTS     = { sage: { pos: '#4a6741', neg: '#b85c4e' } };
+  const MONTH_LBL   = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+  const DAY_LBL     = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+  const DEBT_CATS   = ['Affitto','Bolletta','Prestito','Abbonamento','Rata','Altro'];
 
-    const ACCENTS = { sage: { pos: '#4a6741', neg: '#b85c4e', tint: '#eef1e9' } };
-    const MONTH_LABELS = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
-    const DAY_LABELS   = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+  const fmtEUR = (n, { decimals=2 }={}) => {
+    const s = Math.abs(n).toLocaleString('it-IT',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
+    return `${n<0?'−':''}${s} €`;
+  };
+  const fmtShort = n => Math.abs(n)>=1000 ? (n/1000).toFixed(1).replace('.',',')+' k' : Math.round(n).toString();
 
-    function fmtEUR(n, { sign = false, decimals = 2 } = {}) {
-      const s = Math.abs(n).toLocaleString('it-IT', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-      const prefix = sign ? (n < 0 ? '−' : '+') : (n < 0 ? '−' : '');
-      return `${prefix}${s} €`;
-    }
-    function fmtShort(n) {
-      if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1).replace('.', ',') + 'k';
-      return Math.round(n).toString();
-    }
-    function getToday() {
-      const d = new Date(); d.setHours(23, 59, 59, 999); return d;
-    }
-    function daysAgo(n) {
-      const d = new Date(); d.setDate(d.getDate() - n); d.setHours(12, 0, 0, 0); return d;
-    }
-    function dateDiffDays(date) {
-      const d = date instanceof Date ? date : new Date(date);
-      return Math.floor((getToday() - d) / 86400000);
-    }
-
-    const CATEGORIES = [
-      { key: 'Serata',        kind: 'in'  },
-      { key: 'Deposito',      kind: 'in'  },
-      { key: 'Altro entrata', kind: 'in'  },
-      { key: 'Cibo',          kind: 'out' },
-      { key: 'Svago',         kind: 'out' },
-      { key: 'Abbonamenti',   kind: 'out' },
-      { key: 'Shopping',      kind: 'out' },
-      { key: 'Trasporti',     kind: 'out' },
-      { key: 'Altro',         kind: 'out' },
-    ];
-
-    const ACCOUNTS = [
-      { key: 'cash',   label: 'Contanti',     sub: 'Portafoglio'  },
-      { key: 'card',   label: 'Carta',        sub: 'Conto corrente'},
-      { key: 'invest', label: 'Investimenti', sub: 'Broker'        },
-    ];
-
-    const INITIAL_BALANCES = { cash: 420, card: 1840, invest: 3200 };
-
-    const SEED_TXS = [
-      { id:1,  type:'in',  account:'cash',   category:'Serata',      amount:185,   note:'Serata al locale',  date:daysAgo(0) },
-      { id:2,  type:'out', account:'card',   category:'Cibo',        amount:12.40, note:'Colazione bar',      date:daysAgo(0) },
-      { id:3,  type:'in',  account:'cash',   category:'Serata',      amount:210,   note:'Serata al locale',  date:daysAgo(1) },
-      { id:4,  type:'out', account:'card',   category:'Cibo',        amount:34.80, note:'Spesa Esselunga',   date:daysAgo(1) },
-      { id:5,  type:'in',  account:'cash',   category:'Serata',      amount:175,   note:'Serata al locale',  date:daysAgo(2) },
-      { id:6,  type:'out', account:'card',   category:'Svago',       amount:22,    note:'Cinema',            date:daysAgo(2) },
-      { id:7,  type:'out', account:'card',   category:'Abbonamenti', amount:10.99, note:'Spotify',           date:daysAgo(3) },
-      { id:8,  type:'in',  account:'cash',   category:'Serata',      amount:195,   note:'Serata al locale',  date:daysAgo(4) },
-      { id:9,  type:'out', account:'card',   category:'Shopping',    amount:48,    note:'Maglione',          date:daysAgo(4) },
-      { id:10, type:'in',  account:'cash',   category:'Serata',      amount:220,   note:'Venerdì sera',      date:daysAgo(5) },
-      { id:11, type:'out', account:'cash',   category:'Svago',       amount:35,    note:'Aperitivo',         date:daysAgo(5) },
-      { id:12, type:'out', account:'card',   category:'Cibo',        amount:18.20, note:'Pranzo fuori',      date:daysAgo(6) },
-      { id:13, type:'in',  account:'invest', category:'Deposito',    amount:200,   note:'PAC mensile',       date:daysAgo(7) },
-    ];
-
-    const SEED_GOALS = [
-      { id:1, name:'Vacanza estate',  current:480,  target:1200 },
-      { id:2, name:'Fondo emergenza', current:1850, target:3000 },
-      { id:3, name:'MacBook nuovo',   current:320,  target:1800 },
-    ];
-
-    // ── persistence ──────────────────────────────────────────
-    function ls(key, fallback, parse = JSON.parse) {
-      try { const r = localStorage.getItem(key); if (r != null) return parse(r); } catch(e) {}
-      return fallback;
-    }
-    function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
-
-    function loadTransactions() {
-      const arr = ls('finanze.txs', null);
-      if (arr && arr.length > 0) return arr.map(t => ({ ...t, date: new Date(t.date) }));
-      return SEED_TXS;
-    }
-    function loadGoals()        { return ls('finanze.goals', SEED_GOALS); }
-    function loadBaseBalances() { return ls('finanze.bases', { ...INITIAL_BALANCES }); }
-
-    // ── computation ──────────────────────────────────────────
-    // baseBalances = adjusted starting point per account (editable by user)
-    // transactions are applied on top of baseBalances
-    function computeBalances(transactions, baseBalances) {
-      const b = { ...baseBalances };
-      for (const t of transactions) b[t.account] += (t.type === 'in' ? 1 : -1) * t.amount;
-      return b;
-    }
-
-    function computeDaily(transactions, days = 7) {
-      const arr = Array.from({ length: days }, () => ({ in: 0, out: 0 }));
-      const end = getToday();
-      for (const t of transactions) {
-        const d = t.date instanceof Date ? t.date : new Date(t.date);
-        const diff = Math.floor((end - d) / 86400000);
-        if (diff >= 0 && diff < days) arr[days - 1 - diff][t.type] += t.amount;
-      }
-      return arr;
-    }
-
-    function buildMonthlyHistory(transactions, baseBalances) {
-      const now = new Date();
-      const base = Object.values(baseBalances).reduce((s, v) => s + v, 0);
-      // synthetic 5 months of growth before current month
-      const seedDeltas = [-1060, -800, -560, -290, -100];
-      const months = [];
-      for (let i = 5; i >= 1; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        months.push({ label: MONTH_LABELS[d.getMonth()], total: Math.round(base + seedDeltas[5 - i]) });
-      }
-      const thisStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const thisNet = transactions
-        .filter(t => new Date(t.date) >= thisStart)
-        .reduce((s, t) => s + (t.type === 'in' ? t.amount : -t.amount), 0);
-      months.push({ label: MONTH_LABELS[now.getMonth()], total: Math.round(base + thisNet) });
-      return months;
-    }
-
-    function getDayGreeting() {
-      const now = new Date();
-      const h = now.getHours();
-      return {
-        saluto: h < 12 ? 'Buongiorno' : h < 18 ? 'Buon pomeriggio' : 'Buonasera',
-        giorno: DAY_LABELS[now.getDay()],
-      };
-    }
-
-    Object.assign(window, {
-      fmtEUR, fmtShort, dateDiffDays, getDayGreeting,
-      CATEGORIES, ACCOUNTS, ACCENTS, SEED_GOALS,
-      loadTransactions, loadGoals, loadBaseBalances,
-      computeBalances, computeDaily, buildMonthlyHistory,
-      lsSet,
-    });
-  </script>
-
-  <!-- ─── ICONS ─────────────────────────────────────────────── -->
-  <script type="text/babel">
-    const Icon = {
-      plus:       (s=20,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke={c} strokeWidth="2" strokeLinecap="round"/></svg>,
-      arrowUp:    (s=16,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-      arrowDown:  (s=16,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 5v14M6 13l6 6 6-6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-      wallet:     (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="14" rx="2.5" stroke={c} strokeWidth="1.6"/><path d="M3 10h18" stroke={c} strokeWidth="1.6"/><circle cx="16.5" cy="14.5" r="1.2" fill={c}/></svg>,
-      chart:      (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" stroke={c} strokeWidth="1.6" strokeLinecap="round"/></svg>,
-      target:     (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6"/><circle cx="12" cy="12" r="5" stroke={c} strokeWidth="1.6"/><circle cx="12" cy="12" r="1.5" fill={c}/></svg>,
-      home:       (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9z" stroke={c} strokeWidth="1.6" strokeLinejoin="round"/></svg>,
-      close:      (s=18,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke={c} strokeWidth="2" strokeLinecap="round"/></svg>,
-      trash:      (s=16,c='#b85c4e') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-      pencil:     (s=14,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-      accountCash:   (c='#111') => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="18" height="12" rx="2" stroke={c} strokeWidth="1.6"/><circle cx="12" cy="13" r="2.5" stroke={c} strokeWidth="1.6"/></svg>,
-      accountCard:   (c='#111') => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke={c} strokeWidth="1.6"/><path d="M3 10h18" stroke={c} strokeWidth="1.6"/></svg>,
-      accountInvest: (c='#111') => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 18l5-6 4 3 7-9" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M15 6h5v5" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  function getToday() { const d=new Date(); d.setHours(23,59,59,999); return d; }
+  function daysAgo(n)  { const d=new Date(); d.setDate(d.getDate()-n); d.setHours(12,0,0,0); return d; }
+  function dateDiffDays(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    return Math.floor((getToday()-d)/86400000);
+  }
+  function getDayGreeting() {
+    const h = new Date().getHours();
+    return {
+      saluto: h<12?'Buongiorno':h<18?'Buon pomeriggio':'Buonasera',
+      giorno: DAY_LBL[new Date().getDay()],
     };
-    Object.assign(window, { Icon });
-  </script>
+  }
+  function getDueStatus(dueDateStr) {
+    const now = new Date(); now.setHours(0,0,0,0);
+    const due = new Date(dueDateStr);
+    const diff = Math.ceil((due-now)/86400000);
+    if (diff<0)  return { label:`Scaduto ${Math.abs(diff)}g fa`, color:'#b85c4e', level:'overdue' };
+    if (diff===0) return { label:'Scade oggi',                    color:'#c17d3a', level:'today'   };
+    if (diff<=5)  return { label:`Scade tra ${diff}g`,            color:'#c17d3a', level:'soon'    };
+    return { label:`Scade il ${due.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}`, color:'rgba(0,0,0,0.4)', level:'ok' };
+  }
 
-  <!-- ─── HOME SCREEN ───────────────────────────────────────── -->
-  <script type="text/babel">
-    function Sparkline({ daily, accent }) {
-      // viewBox-based: scales to any container width
-      const VW = 320, VH = 72, P = 4;
-      const net = daily.map(d => d.in - d.out);
-      const max = Math.max(...net.map(Math.abs), 100);
-      const stepX = (VW - P * 2) / (net.length - 1);
-      const pts = net.map((v, i) => [P + i * stepX, VH/2 - (v/max)*(VH/2 - 8)]);
-      const path = pts.map((p,i) => (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
-      const area = path + ` L${VW-P},${VH-2} L${P},${VH-2} Z`;
-      const labels = ['L','M','M','G','V','S','D'];
-      return (
-        <div>
-          <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" height={VH} style={{ display:'block', overflow:'visible' }}>
-            <defs>
-              <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={accent} stopOpacity="0.18"/>
-                <stop offset="100%" stopColor={accent} stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            <line x1={P} y1={VH/2} x2={VW-P} y2={VH/2} stroke="#000" strokeOpacity="0.08" strokeDasharray="2 3"/>
-            <path d={area} fill="url(#spark-fill)"/>
-            <path d={path} fill="none" stroke={accent} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-            {pts.map(([x,y],i) => (
-              <circle key={i} cx={x} cy={y} r={i===6?3:1.6}
-                fill={i===6?'#111':accent} stroke={i===6?'#fff':'none'} strokeWidth={i===6?1.5:0}/>
-            ))}
-          </svg>
-          <div style={{ display:'flex', justifyContent:'space-between', marginTop:4,
-            fontFamily:'ui-monospace,Menlo,monospace', fontSize:10, letterSpacing:0.5, color:'rgba(0,0,0,0.35)' }}>
-            {labels.map((l,i) => <span key={i} style={{ color:i===6?'#111':undefined, fontWeight:i===6?600:400 }}>{l}</span>)}
-          </div>
-        </div>
-      );
+  const ACCOUNTS = [
+    { key:'cash',   label:'Contanti',     sub:'Portafoglio'   },
+    { key:'card',   label:'Carta',        sub:'Conto corrente'},
+    { key:'invest', label:'Investimenti', sub:'Broker'        },
+  ];
+  const CATEGORIES = [
+    { key:'Serata',        kind:'in'  },
+    { key:'Deposito',      kind:'in'  },
+    { key:'Altro entrata', kind:'in'  },
+    { key:'Cibo',          kind:'out' },
+    { key:'Svago',         kind:'out' },
+    { key:'Abbonamenti',   kind:'out' },
+    { key:'Shopping',      kind:'out' },
+    { key:'Trasporti',     kind:'out' },
+    { key:'Altro',         kind:'out' },
+  ];
+  const INITIAL_BALANCES = { cash:420, card:1840, invest:3200 };
+
+  const SEED_TXS = [
+    { id:1,  type:'in',  account:'cash',   category:'Serata',      amount:185,   note:'Serata al locale',  date:daysAgo(0) },
+    { id:2,  type:'out', account:'card',   category:'Cibo',        amount:12.40, note:'Colazione bar',      date:daysAgo(0) },
+    { id:3,  type:'in',  account:'cash',   category:'Serata',      amount:210,   note:'Serata al locale',  date:daysAgo(1) },
+    { id:4,  type:'out', account:'card',   category:'Cibo',        amount:34.80, note:'Spesa Esselunga',   date:daysAgo(1) },
+    { id:5,  type:'in',  account:'cash',   category:'Serata',      amount:175,   note:'Serata al locale',  date:daysAgo(2) },
+    { id:6,  type:'out', account:'card',   category:'Svago',       amount:22,    note:'Cinema',            date:daysAgo(2) },
+    { id:7,  type:'out', account:'card',   category:'Abbonamenti', amount:10.99, note:'Spotify',           date:daysAgo(3) },
+    { id:8,  type:'in',  account:'cash',   category:'Serata',      amount:195,   note:'Serata al locale',  date:daysAgo(4) },
+    { id:9,  type:'out', account:'card',   category:'Shopping',    amount:48,    note:'Maglione',          date:daysAgo(4) },
+    { id:10, type:'in',  account:'cash',   category:'Serata',      amount:220,   note:'Venerdì sera',      date:daysAgo(5) },
+    { id:11, type:'out', account:'cash',   category:'Svago',       amount:35,    note:'Aperitivo',         date:daysAgo(5) },
+    { id:12, type:'out', account:'card',   category:'Cibo',        amount:18.20, note:'Pranzo fuori',      date:daysAgo(6) },
+    { id:13, type:'in',  account:'invest', category:'Deposito',    amount:200,   note:'PAC mensile',       date:daysAgo(7) },
+  ];
+  const SEED_GOALS = [
+    { id:1, name:'Vacanza estate',  current:480,  target:1200 },
+    { id:2, name:'Fondo emergenza', current:1850, target:3000 },
+    { id:3, name:'MacBook nuovo',   current:320,  target:1800 },
+  ];
+  const SEED_DEBTS = [
+    { id:1, name:'Affitto',           amount:650,   dueDate:'2026-04-30', category:'Affitto',     paid:false, paidDate:null },
+    { id:2, name:'Bolletta luce',     amount:85.40, dueDate:'2026-04-25', category:'Bolletta',    paid:false, paidDate:null },
+    { id:3, name:'Prestito a Marco',  amount:50,    dueDate:'2026-05-10', category:'Prestito',    paid:false, paidDate:null },
+    { id:4, name:'Netflix',           amount:15.99, dueDate:'2026-04-20', category:'Abbonamento', paid:true,  paidDate:'2026-04-19' },
+  ];
+
+  // ── localStorage ──────────────────────────────────────────
+  function ls(key, fallback) {
+    try { const r=localStorage.getItem(key); if(r!=null) return JSON.parse(r); } catch(e) {}
+    return fallback;
+  }
+  const lsSet = (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch(e) {} };
+
+  function loadTransactions() {
+    const arr = ls('finanze.txs', null);
+    if (arr?.length>0) return arr.map(t=>({...t,date:new Date(t.date)}));
+    return SEED_TXS;
+  }
+  const loadGoals        = () => ls('finanze.goals', SEED_GOALS);
+  const loadBaseBalances = () => ls('finanze.bases', {...INITIAL_BALANCES});
+  const loadDebts        = () => ls('finanze.debts', SEED_DEBTS);
+
+  // ── computation ───────────────────────────────────────────
+  function computeBalances(transactions, baseBalances) {
+    const b = {...baseBalances};
+    for (const t of transactions) b[t.account] += (t.type==='in'?1:-1)*t.amount;
+    return b;
+  }
+  function computeDaily(transactions, days=7) {
+    const arr = Array.from({length:days},()=>({in:0,out:0}));
+    const end = getToday();
+    for (const t of transactions) {
+      const d = t.date instanceof Date ? t.date : new Date(t.date);
+      const diff = Math.floor((end-d)/86400000);
+      if (diff>=0&&diff<days) arr[days-1-diff][t.type]+=t.amount;
     }
-
-    function AccountCard({ account, balance, active, onClick, onEdit }) {
-      const glyphs = { cash: Icon.accountCash, card: Icon.accountCard, invest: Icon.accountInvest };
-      const col = active ? '#fff' : '#111';
-      return (
-        <div style={{ flex:1, minWidth:0, position:'relative' }}>
-          <button onClick={onClick} style={{
-            all:'unset', cursor:'pointer', display:'block', width:'100%',
-            background: active ? '#111' : '#fff',
-            borderRadius: 20, padding: '14px 12px 12px',
-            border: active ? 'none' : '0.5px solid rgba(0,0,0,0.06)',
-            boxShadow: active ? '0 8px 24px rgba(0,0,0,0.13)' : '0 1px 3px rgba(0,0,0,0.03)',
-            transition: 'all 0.2s',
-          }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
-              <div style={{ width:28, height:28, borderRadius:999,
-                background: active ? 'rgba(255,255,255,0.12)' : '#f3f2ec',
-                display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {glyphs[account.key](col)}
-              </div>
-            </div>
-            <div style={{ fontSize:10, letterSpacing:0.5, textTransform:'uppercase',
-              opacity: active ? 0.6 : 0.5, fontWeight:600, marginBottom:4, color:col }}>
-              {account.label}
-            </div>
-            <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:'clamp(18px,5vw,22px)',
-              fontWeight:500, letterSpacing:-0.5, lineHeight:1.1, fontFeatureSettings:'"tnum"', color:col }}>
-              {fmtShort(balance)}<span style={{ fontSize:13, opacity:0.5, marginLeft:2 }}>€</span>
-            </div>
-          </button>
-          {/* Bottone modifica saldo — sempre visibile in basso a destra */}
-          <button onClick={e => { e.stopPropagation(); onEdit(); }} style={{
-            all:'unset', cursor:'pointer',
-            position:'absolute', bottom:8, right:8,
-            width:26, height:26, borderRadius:8,
-            background: active ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-          }}>
-            {Icon.pencil(13, col)}
-          </button>
-        </div>
-      );
+    return arr;
+  }
+  function buildMonthlyHistory(transactions, baseBalances) {
+    const now = new Date();
+    const base = Object.values(baseBalances).reduce((s,v)=>s+v,0);
+    const deltas = [-1060,-800,-560,-290,-100];
+    const months = [];
+    for (let i=5;i>=1;i--) {
+      const d = new Date(now.getFullYear(),now.getMonth()-i,1);
+      months.push({label:MONTH_LBL[d.getMonth()],total:Math.round(base+deltas[5-i])});
     }
+    const thisStart = new Date(now.getFullYear(),now.getMonth(),1);
+    const thisNet = transactions.filter(t=>new Date(t.date)>=thisStart).reduce((s,t)=>s+(t.type==='in'?t.amount:-t.amount),0);
+    months.push({label:MONTH_LBL[now.getMonth()],total:Math.round(base+thisNet)});
+    return months;
+  }
 
-    function TxRow({ tx, last, onDelete }) {
-      const isIn = tx.type === 'in';
-      const accountLabel = ACCOUNTS.find(a => a.key === tx.account)?.label ?? tx.account;
-      const diff = dateDiffDays(tx.date);
-      const dateLabel = diff === 0 ? 'Oggi' : diff === 1 ? 'Ieri'
-        : new Date(tx.date).toLocaleDateString('it-IT', { day:'numeric', month:'short' });
-      return (
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0',
-          borderBottom: last ? 'none' : '0.5px solid rgba(0,0,0,0.06)' }}>
-          <div style={{ width:38, height:38, borderRadius:999, flexShrink:0,
-            background: isIn ? 'rgba(74,103,65,0.1)' : '#f3f2ec',
-            display:'flex', alignItems:'center', justifyContent:'center' }}>
-            {isIn ? Icon.arrowUp(15,'#4a6741') : Icon.arrowDown(15,'#6a6660')}
+  Object.assign(window, {
+    fmtEUR, fmtShort, dateDiffDays, getDayGreeting, getDueStatus,
+    ACCOUNTS, CATEGORIES, ACCENTS, DEBT_CATS,
+    loadTransactions, loadGoals, loadBaseBalances, loadDebts,
+    computeBalances, computeDaily, buildMonthlyHistory, lsSet,
+  });
+</script>
+
+<!-- ─── ICONS ──────────────────────────────────────────────── -->
+<script type="text/babel">
+  const Icon = {
+    plus:          (s=20,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke={c} strokeWidth="2" strokeLinecap="round"/></svg>,
+    arrowUp:       (s=16,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    arrowDown:     (s=16,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 5v14M6 13l6 6 6-6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    wallet:        (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="14" rx="2.5" stroke={c} strokeWidth="1.6"/><path d="M3 10h18" stroke={c} strokeWidth="1.6"/><circle cx="16.5" cy="14.5" r="1.2" fill={c}/></svg>,
+    chart:         (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" stroke={c} strokeWidth="1.6" strokeLinecap="round"/></svg>,
+    target:        (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6"/><circle cx="12" cy="12" r="5" stroke={c} strokeWidth="1.6"/><circle cx="12" cy="12" r="1.5" fill={c}/></svg>,
+    home:          (s=22,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9z" stroke={c} strokeWidth="1.6" strokeLinejoin="round"/></svg>,
+    close:         (s=18,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke={c} strokeWidth="2" strokeLinecap="round"/></svg>,
+    trash:         (s=16,c='#b85c4e') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    pencil:        (s=14,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    check:         (s=18,c='#fff') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke={c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    clock:         (s=18,c='#111') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6"/><path d="M12 7v5l3 3" stroke={c} strokeWidth="1.6" strokeLinecap="round"/></svg>,
+    alertCircle:   (s=18,c='#b85c4e') => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6"/><path d="M12 8v4M12 16h.01" stroke={c} strokeWidth="2" strokeLinecap="round"/></svg>,
+    accountCash:   (c='#111') => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="18" height="12" rx="2" stroke={c} strokeWidth="1.6"/><circle cx="12" cy="13" r="2.5" stroke={c} strokeWidth="1.6"/></svg>,
+    accountCard:   (c='#111') => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke={c} strokeWidth="1.6"/><path d="M3 10h18" stroke={c} strokeWidth="1.6"/></svg>,
+    accountInvest: (c='#111') => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 18l5-6 4 3 7-9" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M15 6h5v5" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  };
+  Object.assign(window, { Icon });
+</script>
+
+<!-- ─── SHARED UI ───────────────────────────────────────────── -->
+<script type="text/babel">
+  // Tastierino numerico riutilizzabile
+  function Keypad({ onDigit, onBack, onDot }) {
+    return (
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:4 }}>
+        {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+          <button key={k} onClick={() => k==='⌫'?onBack():k==='.'?onDot():onDigit(k)}
+            style={{ all:'unset', cursor:'pointer', textAlign:'center', padding:'13px 0',
+              fontFamily:'Fraunces,Georgia,serif', fontSize:26, fontWeight:400, borderRadius:12 }}
+            onTouchStart={e=>e.currentTarget.style.background='#ede8dc'}
+            onTouchEnd={e=>e.currentTarget.style.background='transparent'}
+          >{k}</button>
+        ))}
+      </div>
+    );
+  }
+
+  function Chip({ label, active, onClick }) {
+    return (
+      <button onClick={onClick} style={{
+        all:'unset', cursor:'pointer', padding:'9px 14px', borderRadius:999,
+        background: active?'#111':'#fff', color: active?'#fff':'#111',
+        border:`0.5px solid ${active?'transparent':'rgba(0,0,0,0.1)'}`,
+        fontSize:13, fontWeight:500, whiteSpace:'nowrap', transition:'all 0.15s',
+      }}>{label}</button>
+    );
+  }
+
+  // Sheet modale riutilizzabile (slide-up dal basso)
+  function BottomSheet({ open, onClose, children, zIndex=200 }) {
+    return (
+      <>
+        <div onClick={onClose} style={{
+          position:'fixed', inset:0, background:'rgba(15,15,15,0.45)',
+          backdropFilter:'blur(10px)', WebkitBackdropFilter:'blur(10px)',
+          opacity:open?1:0, pointerEvents:open?'auto':'none',
+          transition:'opacity 0.25s', zIndex,
+        }}/>
+        <div style={{
+          position:'fixed', left:0, right:0, bottom:0,
+          transform:open?'translateY(0)':'translateY(100%)',
+          transition:'transform 0.35s cubic-bezier(0.32,0.72,0,1)',
+          zIndex:zIndex+1, background:'#fafaf7',
+          borderRadius:'28px 28px 0 0',
+          boxShadow:'0 -12px 40px rgba(0,0,0,0.16)',
+          maxHeight:'94dvh', overflowY:'auto',
+          paddingBottom:'max(24px, env(safe-area-inset-bottom))',
+        }}>
+          <div style={{ display:'flex', justifyContent:'center', padding:'8px 0 6px' }}>
+            <div style={{ width:38, height:4, borderRadius:999, background:'rgba(0,0,0,0.14)' }}/>
           </div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:15, fontWeight:500, marginBottom:2,
-              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{tx.note}</div>
-            <div style={{ fontSize:12, color:'rgba(0,0,0,0.45)' }}>
-              {tx.category} · {accountLabel} · {dateLabel}
+          {children}
+        </div>
+      </>
+    );
+  }
+
+  // Modal per modificare il saldo di un conto
+  function EditBalanceModal({ open, onClose, account, currentBalance, onSave }) {
+    const [val, setVal] = useState('');
+    useEffect(() => { if(open) setVal(Math.round(currentBalance).toString()); }, [open]);
+    const onDigit = d => {
+      if(val.length>=8) return;
+      if(d==='0'&&val===''){setVal('0');return;}
+      if(val==='0'){setVal(d);return;}
+      setVal(val+d);
+    };
+    const confirm = () => { const n=parseFloat(val); if(!isNaN(n)&&n>=0){onSave(n);onClose();} };
+    const label = account ? ACCOUNTS.find(a=>a.key===account)?.label : '';
+    return (
+      <BottomSheet open={open} onClose={onClose} zIndex={300}>
+        <div style={{ padding:'6px 22px 0' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+            <div>
+              <div style={{ fontSize:12, color:'rgba(0,0,0,0.45)', marginBottom:2 }}>Modifica saldo</div>
+              <div style={{ fontSize:18, fontWeight:700 }}>{label}</div>
             </div>
-          </div>
-          <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:16, fontWeight:500,
-            fontFeatureSettings:'"tnum"', color: isIn ? '#4a6741' : '#111', flexShrink:0 }}>
-            {isIn?'+':'−'}{Math.abs(tx.amount).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}€
-          </div>
-          {onDelete && (
-            <button onClick={() => onDelete(tx.id)} style={{
-              all:'unset', cursor:'pointer', width:32, height:32, flexShrink:0,
+            <button onClick={onClose} style={{ all:'unset', cursor:'pointer', width:32, height:32,
               display:'flex', alignItems:'center', justifyContent:'center',
-              borderRadius:8, background:'rgba(184,92,78,0.08)',
-            }}>{Icon.trash(15)}</button>
-          )}
+              borderRadius:999, background:'rgba(0,0,0,0.06)' }}>{Icon.close(16)}</button>
+          </div>
+          <div style={{ textAlign:'center', padding:'16px 0 18px' }}>
+            <span style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:52, fontWeight:500,
+              letterSpacing:-2, lineHeight:1, fontFeatureSettings:'"tnum"',
+              color:val?'#111':'rgba(0,0,0,0.2)' }}>{(val||'0').replace('.',',')}</span>
+            <span style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:24, opacity:0.4, marginLeft:4 }}>€</span>
+          </div>
+          <Keypad onDigit={onDigit} onBack={()=>setVal(val.slice(0,-1))} onDot={()=>{ if(!val.includes('.'))setVal((val||'0')+'.'); }}/>
+          <button onClick={confirm} style={{
+            all:'unset', cursor:'pointer', display:'block', width:'100%',
+            textAlign:'center', padding:'16px 0', marginTop:10,
+            background:val?'#111':'#d6d3cc', color:'#fff', borderRadius:16, fontSize:16, fontWeight:700,
+          }}>Salva saldo</button>
         </div>
-      );
-    }
+      </BottomSheet>
+    );
+  }
 
-    // Modal per modificare il saldo di un conto
-    function EditBalanceModal({ open, onClose, account, currentBalance, onSave }) {
-      const [val, setVal] = useState('');
+  Object.assign(window, { Keypad, Chip, BottomSheet, EditBalanceModal });
+</script>
 
-      useEffect(() => {
-        if (open) setVal(Math.round(currentBalance).toString());
-      }, [open]);
-
-      const onDigit = d => {
-        if (val.length >= 8) return;
-        if (d === '0' && val === '') { setVal('0'); return; }
-        if (val === '0') { setVal(d); return; }
-        setVal(val + d);
-      };
-      const onBack = () => setVal(val.slice(0, -1));
-      const onDot = () => { if (!val.includes('.')) setVal((val || '0') + '.'); };
-
-      const confirm = () => {
-        const n = parseFloat(val);
-        if (!isNaN(n) && n >= 0) { onSave(n); onClose(); }
-      };
-
-      const display = val || '0';
-      const label = account ? ACCOUNTS.find(a => a.key === account)?.label : '';
-
-      return (
-        <>
-          <div onClick={onClose} style={{
-            position:'fixed', inset:0, background:'rgba(15,15,15,0.45)',
-            backdropFilter:'blur(10px)', WebkitBackdropFilter:'blur(10px)',
-            opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none',
-            transition:'opacity 0.25s', zIndex:90,
-          }}/>
-          <div style={{
-            position:'fixed', left:0, right:0, bottom:0,
-            transform: open ? 'translateY(0)' : 'translateY(100%)',
-            transition:'transform 0.35s cubic-bezier(0.32,0.72,0,1)',
-            zIndex:91, background:'#fafaf7',
-            borderRadius:'28px 28px 0 0',
-            boxShadow:'0 -12px 40px rgba(0,0,0,0.16)',
-            padding:'10px 22px',
-            paddingBottom:'max(28px, env(safe-area-inset-bottom))',
-          }}>
-            <div style={{ display:'flex', justifyContent:'center', padding:'6px 0 14px' }}>
-              <div style={{ width:38, height:4, borderRadius:999, background:'rgba(0,0,0,0.14)' }}/>
-            </div>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
-              <div>
-                <div style={{ fontSize:12, color:'rgba(0,0,0,0.45)', marginBottom:2 }}>Modifica saldo</div>
-                <div style={{ fontSize:18, fontWeight:600 }}>{label}</div>
-              </div>
-              <button onClick={onClose} style={{ all:'unset', cursor:'pointer', width:32, height:32,
-                display:'flex', alignItems:'center', justifyContent:'center',
-                borderRadius:999, background:'rgba(0,0,0,0.06)' }}>
-                {Icon.close(16)}
-              </button>
-            </div>
-
-            <div style={{ textAlign:'center', padding:'16px 0 20px' }}>
-              <div style={{ display:'inline-flex', alignItems:'baseline', gap:6 }}>
-                <span style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:52, fontWeight:500,
-                  letterSpacing:-2, lineHeight:1, fontFeatureSettings:'"tnum"',
-                  color: val ? '#111' : 'rgba(0,0,0,0.2)' }}>
-                  {display.replace('.',',')}
-                </span>
-                <span style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:24, opacity:0.4 }}>€</span>
-              </div>
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:4, marginBottom:12 }}>
-              {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
-                <button key={k} onClick={() => k==='⌫'?onBack():k==='.'?onDot():onDigit(k)}
-                  style={{ all:'unset', cursor:'pointer', textAlign:'center',
-                    padding:'14px 0', fontFamily:'Fraunces,Georgia,serif',
-                    fontSize:26, fontWeight:400, borderRadius:12 }}
-                  onTouchStart={e => e.currentTarget.style.background='#ede8dc'}
-                  onTouchEnd={e => e.currentTarget.style.background='transparent'}
-                >{k}</button>
-              ))}
-            </div>
-
-            <button onClick={confirm} style={{
-              all:'unset', cursor:'pointer', display:'block', width:'100%',
-              textAlign:'center', padding:'16px 0',
-              background: val ? '#111' : '#d6d3cc',
-              color:'#fff', borderRadius:16, fontSize:16, fontWeight:600,
-            }}>Salva saldo</button>
-          </div>
-        </>
-      );
-    }
-
-    function HomeScreen({ transactions, balances, accent, onAdd, onOpenTx, activeFilter, setActiveFilter, onEditBalance }) {
-      const total = balances.cash + balances.card + balances.invest;
-      const daily = computeDaily(transactions);
-      const weekIn  = daily.reduce((s,d) => s+d.in,  0);
-      const weekOut = daily.reduce((s,d) => s+d.out, 0);
-      const { saluto, giorno } = getDayGreeting();
-
-      const shown = (activeFilter === 'all' ? transactions : transactions.filter(t => t.account === activeFilter))
-        .slice().sort((a,b) => new Date(b.date)-new Date(a.date)).slice(0, 7);
-
-      return (
-        <div style={{ padding:'0 18px 150px' }}>
-          {/* Header */}
-          <div style={{ paddingTop:14, paddingBottom:22 }}>
-            <div style={{ fontSize:13, color:'rgba(0,0,0,0.45)', marginBottom:3 }}>{saluto} — {giorno}</div>
-            <div style={{ fontSize:24, fontWeight:700, letterSpacing:-0.5 }}>Le tue finanze</div>
-          </div>
-
-          {/* Saldo totale hero */}
-          <div style={{ marginBottom:22 }}>
-            <div style={{ fontSize:11, color:'rgba(0,0,0,0.45)', textTransform:'uppercase',
-              letterSpacing:0.8, marginBottom:8, fontWeight:600 }}>Saldo totale</div>
-            <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:16 }}>
-              <div style={{ fontFamily:'Fraunces,Georgia,serif', fontWeight:500,
-                fontSize:'clamp(44px,14vw,60px)', letterSpacing:-2, lineHeight:1, fontFeatureSettings:'"tnum"' }}>
-                {total.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}
-              </div>
-              <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:'clamp(22px,6vw,30px)', fontWeight:400, opacity:0.45 }}>€</div>
-            </div>
-            <div style={{ display:'flex', gap:16, fontSize:13, alignItems:'center' }}>
-              <span style={{ color:'#4a6741', display:'inline-flex', alignItems:'center', gap:4 }}>
-                {Icon.arrowUp(12,'#4a6741')} +{weekIn.toFixed(0)} €
-              </span>
-              <span style={{ color:'rgba(0,0,0,0.5)', display:'inline-flex', alignItems:'center', gap:4 }}>
-                {Icon.arrowDown(12,'#6a6660')} −{weekOut.toFixed(0)} €
-              </span>
-              <span style={{ color:'rgba(0,0,0,0.35)', marginLeft:'auto', fontSize:12 }}>questa settimana</span>
-            </div>
-          </div>
-
-          {/* Grafico 7 giorni */}
-          <div style={{ background:'#fff', borderRadius:22, padding:'16px 16px 12px',
-            border:'0.5px solid rgba(0,0,0,0.06)', marginBottom:14 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-              <div style={{ fontSize:13, fontWeight:600 }}>Andamento · 7 giorni</div>
-              <div style={{ fontSize:11, color:'rgba(0,0,0,0.4)', fontFamily:'ui-monospace,Menlo,monospace' }}>
-                NET {weekIn-weekOut>=0?'+':'−'}{Math.abs(weekIn-weekOut).toFixed(0)}€
-              </div>
-            </div>
-            <Sparkline daily={daily} accent={accent.pos}/>
-          </div>
-
-          {/* Conti */}
-          <div style={{ display:'flex', gap:8, marginBottom:28 }}>
-            {ACCOUNTS.map(a => (
-              <AccountCard key={a.key} account={a} balance={balances[a.key]}
-                active={activeFilter === a.key}
-                onClick={() => setActiveFilter(activeFilter === a.key ? 'all' : a.key)}
-                onEdit={() => onEditBalance(a.key)}/>
-            ))}
-          </div>
-
-          {/* Movimenti recenti */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-            <div style={{ fontSize:15, fontWeight:700 }}>
-              {activeFilter === 'all' ? 'Movimenti recenti' : `${ACCOUNTS.find(a=>a.key===activeFilter)?.label}`}
-            </div>
-            <button style={{ all:'unset', cursor:'pointer', fontSize:12, color:'rgba(0,0,0,0.45)', fontWeight:500 }}
-              onClick={onOpenTx}>Vedi tutti →</button>
-          </div>
-          <div style={{ background:'#fff', borderRadius:20, padding:'0 14px',
-            border:'0.5px solid rgba(0,0,0,0.06)' }}>
-            {shown.length === 0
-              ? <div style={{ padding:'28px 0', textAlign:'center', fontSize:13, color:'rgba(0,0,0,0.35)' }}>Nessun movimento</div>
-              : shown.map((tx,i) => <TxRow key={tx.id} tx={tx} last={i===shown.length-1}/>)
-            }
-          </div>
-        </div>
-      );
-    }
-
-    Object.assign(window, { HomeScreen, TxRow, Sparkline, AccountCard, EditBalanceModal });
-  </script>
-
-  <!-- ─── MODAL AGGIUNGI ────────────────────────────────────── -->
-  <script type="text/babel">
-    function Chip({ label, active, onClick }) {
-      return (
-        <button onClick={onClick} style={{
-          all:'unset', cursor:'pointer', padding:'9px 14px',
-          borderRadius:999, background: active ? '#111' : '#fff', color: active ? '#fff' : '#111',
-          border:`0.5px solid ${active ? 'transparent' : 'rgba(0,0,0,0.1)'}`,
-          fontSize:13, fontWeight:500, whiteSpace:'nowrap', transition:'all 0.15s',
-        }}>{label}</button>
-      );
-    }
-
-    function AddModal({ open, onClose, onSubmit, accent }) {
-      const [amount, setAmount] = useState('');
-      const [type,   setType]   = useState('out');
-      const [account,  setAccount]  = useState('cash');
-      const [category, setCategory] = useState('Cibo');
-      const [note,     setNote]     = useState('');
-
-      useEffect(() => {
-        if (!open) setTimeout(() => { setAmount(''); setType('out'); setAccount('cash'); setCategory('Cibo'); setNote(''); }, 360);
-      }, [open]);
-      useEffect(() => { setCategory(type === 'in' ? 'Serata' : 'Cibo'); }, [type]);
-
-      const onDigit = d => {
-        if (amount.length >= 7) return;
-        if (d==='0' && amount==='') { setAmount('0'); return; }
-        if (amount==='0') { setAmount(d); return; }
-        setAmount(amount + d);
-      };
-      const onBack = () => setAmount(amount.slice(0, -1));
-      const onDot  = () => { if (!amount.includes('.')) setAmount((amount||'0')+'.'); };
-
-      const quickFill = v => { setType('in'); setAccount('cash'); setCategory('Serata'); setNote('Serata al locale'); setAmount(String(v)); };
-
-      const canSave = parseFloat(amount) > 0;
-      const save = () => {
-        if (!canSave) return;
-        onSubmit({ type, account, category, amount: parseFloat(amount), note: note || category });
-        onClose();
-      };
-
-      return (
-        <>
-          <div onClick={onClose} style={{
-            position:'fixed', inset:0, background:'rgba(15,15,15,0.4)',
-            backdropFilter:'blur(8px)', WebkitBackdropFilter:'blur(8px)',
-            opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none',
-            transition:'opacity 0.25s', zIndex:80,
-          }}/>
-          <div style={{
-            position:'fixed', left:0, right:0, bottom:0,
-            transform: open ? 'translateY(0)' : 'translateY(100%)',
-            transition:'transform 0.35s cubic-bezier(0.32,0.72,0,1)',
-            zIndex:81, background:'#fafaf7',
-            borderRadius:'28px 28px 0 0',
-            boxShadow:'0 -12px 40px rgba(0,0,0,0.14)',
-            padding:'10px 20px',
-            paddingBottom:'max(22px, env(safe-area-inset-bottom))',
-            maxHeight:'94dvh', overflowY:'auto',
-          }}>
-            <div style={{ display:'flex', justifyContent:'center', padding:'6px 0 12px' }}>
-              <div style={{ width:38, height:4, borderRadius:999, background:'rgba(0,0,0,0.14)' }}/>
-            </div>
-
-            {/* Toggle */}
-            <div style={{ display:'flex', background:'#ede8dc', borderRadius:14, padding:3, marginBottom:16, position:'relative' }}>
-              <div style={{
-                position:'absolute', top:3, bottom:3, width:'calc(50% - 3px)',
-                left: type==='out' ? 3 : 'calc(50%)',
-                background:'#fff', borderRadius:11, boxShadow:'0 1px 3px rgba(0,0,0,0.08)',
-                transition:'left 0.2s cubic-bezier(0.32,0.72,0,1)',
-              }}/>
-              {[['out','Spesa'],['in','Entrata']].map(([t,lbl]) => (
-                <button key={t} onClick={() => setType(t)} style={{
-                  all:'unset', cursor:'pointer', flex:1, textAlign:'center',
-                  padding:'9px 0', fontSize:14, fontWeight:600, position:'relative',
-                  color: type===t ? '#111' : 'rgba(0,0,0,0.45)',
-                }}>{lbl}</button>
-              ))}
-            </div>
-
-            {/* Importo */}
-            <div style={{ textAlign:'center', padding:'8px 0 18px' }}>
-              <span style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:52, fontWeight:500,
-                letterSpacing:-2, lineHeight:1, fontFeatureSettings:'"tnum"',
-                color: amount==='' ? 'rgba(0,0,0,0.18)' : (type==='in' ? '#4a6741' : '#111') }}>
-                {type==='in'?'+':'−'}{(amount||'0').replace('.',',')}
-              </span>
-              <span style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:22, opacity:0.35, marginLeft:4 }}>€</span>
-            </div>
-
-            {type==='in' && (
-              <div style={{ marginBottom:16 }}>
-                <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:0.6, color:'rgba(0,0,0,0.4)', fontWeight:600, marginBottom:8 }}>
-                  Serata — accesso rapido
-                </div>
-                <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2 }}>
-                  {[100,150,180,200,250].map(v => (
-                    <Chip key={v} label={`+${v}€`} active={amount===String(v)} onClick={() => quickFill(v)}/>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:0.6, color:'rgba(0,0,0,0.4)', fontWeight:600, marginBottom:8 }}>Conto</div>
-              <div style={{ display:'flex', gap:6 }}>
-                {ACCOUNTS.map(a => <Chip key={a.key} label={a.label} active={account===a.key} onClick={() => setAccount(a.key)}/>)}
-              </div>
-            </div>
-
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:0.6, color:'rgba(0,0,0,0.4)', fontWeight:600, marginBottom:8 }}>Categoria</div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                {CATEGORIES.filter(c => c.kind===type).map(c => (
-                  <Chip key={c.key} label={c.key} active={category===c.key} onClick={() => setCategory(c.key)}/>
-                ))}
-              </div>
-            </div>
-
-            <input value={note} onChange={e => setNote(e.target.value)} placeholder="Nota (opzionale)"
-              style={{ width:'100%', border:'none', outline:'none', background:'#fff',
-                borderRadius:12, padding:'12px 14px', fontSize:14, marginBottom:12,
-                boxShadow:'0 0 0 0.5px rgba(0,0,0,0.08)' }}/>
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:4 }}>
-              {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
-                <button key={k} onClick={() => k==='⌫'?onBack():k==='.'?onDot():onDigit(k)}
-                  style={{ all:'unset', cursor:'pointer', textAlign:'center',
-                    padding:'13px 0', fontFamily:'Fraunces,Georgia,serif',
-                    fontSize:26, fontWeight:400, borderRadius:12, background:'transparent' }}
-                  onTouchStart={e => e.currentTarget.style.background='#ede8dc'}
-                  onTouchEnd={e => e.currentTarget.style.background='transparent'}
-                >{k}</button>
-              ))}
-            </div>
-
-            <button onClick={save} disabled={!canSave} style={{
-              all:'unset', cursor: canSave ? 'pointer' : 'default',
-              display:'block', width:'100%', textAlign:'center', padding:'16px 0', marginTop:12,
-              background: canSave ? '#111' : '#d6d3cc',
-              color:'#fff', borderRadius:16, fontSize:16, fontWeight:700,
-            }}>
-              {type==='in' ? 'Aggiungi entrata' : 'Registra spesa'}
-            </button>
-          </div>
-        </>
-      );
-    }
-
-    Object.assign(window, { AddModal, Chip });
-  </script>
-
-  <!-- ─── CHARTS + GOALS ────────────────────────────────────── -->
-  <script type="text/babel">
-    function BarChart({ daily, accent }) {
-      const VW=320, VH=160, P=6;
-      const max = Math.max(...daily.map(d => Math.max(d.in,d.out)), 100);
-      const colW = (VW-P*2)/daily.length;
-      const barW = colW*0.34;
-      const labels = ['L','M','M','G','V','S','D'];
-      return (
-        <svg viewBox={`0 0 ${VW} ${VH+24}`} width="100%" style={{ display:'block' }}>
-          <line x1={P} y1={VH-20} x2={VW-P} y2={VH-20} stroke="#000" strokeOpacity="0.08"/>
-          {daily.map((d,i) => {
-            const cx = P + colW*(i+0.5);
-            const inH = (d.in/max)*(VH-40);
-            const outH = (d.out/max)*(VH-40);
-            return (
-              <g key={i}>
-                <rect x={cx-barW-1} y={VH-20-inH} width={barW} height={inH||0.5} rx="3" fill={accent.pos} opacity="0.85"/>
-                <rect x={cx+1} y={VH-20-outH} width={barW} height={outH||0.5} rx="3" fill="#111" opacity="0.28"/>
-                <text x={cx} y={VH-5} textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace" fontSize="10"
-                  fill={i===6?'#111':'rgba(0,0,0,0.4)'} fontWeight={i===6?600:400}>{labels[i]}</text>
-              </g>
-            );
-          })}
-        </svg>
-      );
-    }
-
-    function LineChart({ history, accent }) {
-      const VW=320, VH=180, P=10;
-      const vals = history.map(h => h.total);
-      const min = Math.min(...vals)*0.92, max = Math.max(...vals)*1.04;
-      const stepX = (VW-P*2)/(vals.length-1);
-      const pts = vals.map((v,i) => [P+i*stepX, VH-28-((v-min)/(max-min))*(VH-50)]);
-      const path = pts.map((p,i) => (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
-      const area = path+` L${VW-P},${VH-28} L${P},${VH-28} Z`;
-      return (
-        <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display:'block' }}>
-          <defs>
-            <linearGradient id="bal-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={accent.pos} stopOpacity="0.22"/>
-              <stop offset="100%" stopColor={accent.pos} stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          <path d={area} fill="url(#bal-fill)"/>
-          <path d={path} fill="none" stroke={accent.pos} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          {pts.map(([x,y],i) => (
-            <g key={i}>
-              <circle cx={x} cy={y} r={i===pts.length-1?4:2.5}
-                fill={i===pts.length-1?'#111':'#fff'}
-                stroke={i===pts.length-1?'#fff':accent.pos} strokeWidth="1.5"/>
-              <text x={x} y={VH-8} textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace" fontSize="10"
-                fill={i===pts.length-1?'#111':'rgba(0,0,0,0.4)'} fontWeight={i===pts.length-1?600:400}>
-                {history[i].label}
-              </text>
-            </g>
+<!-- ─── HOME SCREEN ─────────────────────────────────────────── -->
+<script type="text/babel">
+  function Sparkline({ daily, accent }) {
+    const VW=320, VH=72, P=4;
+    const net = daily.map(d=>d.in-d.out);
+    const max = Math.max(...net.map(Math.abs),100);
+    const stepX = (VW-P*2)/(net.length-1);
+    const pts = net.map((v,i)=>[P+i*stepX, VH/2-(v/max)*(VH/2-8)]);
+    const path = pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+    const area = path+` L${VW-P},${VH-2} L${P},${VH-2} Z`;
+    const labels = ['L','M','M','G','V','S','D'];
+    return (
+      <div>
+        <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" height={VH} style={{display:'block',overflow:'visible'}}>
+          <defs><linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={accent} stopOpacity="0.18"/>
+            <stop offset="100%" stopColor={accent} stopOpacity="0"/>
+          </linearGradient></defs>
+          <line x1={P} y1={VH/2} x2={VW-P} y2={VH/2} stroke="#000" strokeOpacity="0.08" strokeDasharray="2 3"/>
+          <path d={area} fill="url(#spark-fill)"/>
+          <path d={path} fill="none" stroke={accent} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+          {pts.map(([x,y],i)=>(
+            <circle key={i} cx={x} cy={y} r={i===6?3:1.6}
+              fill={i===6?'#111':accent} stroke={i===6?'#fff':'none'} strokeWidth={i===6?1.5:0}/>
           ))}
         </svg>
-      );
-    }
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:4,
+          fontFamily:'ui-monospace,Menlo,monospace',fontSize:10,letterSpacing:0.5,color:'rgba(0,0,0,0.35)'}}>
+          {labels.map((l,i)=><span key={i} style={{color:i===6?'#111':undefined,fontWeight:i===6?600:400}}>{l}</span>)}
+        </div>
+      </div>
+    );
+  }
 
-    function ChartScreen({ transactions, balances, accent, baseBalances }) {
-      const [range, setRange] = useState('week');
-      const daily = computeDaily(transactions);
-      const weekIn  = daily.reduce((s,d) => s+d.in, 0);
-      const weekOut = daily.reduce((s,d) => s+d.out, 0);
-      const total = balances.cash + balances.card + balances.invest;
-      const monthlyHistory = useMemo(() => buildMonthlyHistory(transactions, baseBalances), [transactions, baseBalances]);
-
-      const byCat = {};
-      for (const t of transactions) if (t.type==='out') byCat[t.category] = (byCat[t.category]||0)+t.amount;
-      const catList = Object.entries(byCat).sort((a,b) => b[1]-a[1]);
-      const catTotal = catList.reduce((s,[,v]) => s+v, 0) || 1;
-
-      return (
-        <div style={{ padding:'0 18px 150px' }}>
-          <div style={{ paddingTop:14, paddingBottom:18 }}>
-            <div style={{ fontSize:13, color:'rgba(0,0,0,0.45)', marginBottom:3 }}>Statistiche</div>
-            <div style={{ fontSize:24, fontWeight:700, letterSpacing:-0.5 }}>Andamento</div>
+  function AccountCard({ account, balance, active, onClick, onEdit }) {
+    const glyphs = { cash:Icon.accountCash, card:Icon.accountCard, invest:Icon.accountInvest };
+    const col = active?'#fff':'#111';
+    return (
+      <div style={{flex:1,minWidth:0,position:'relative'}}>
+        <button onClick={onClick} style={{
+          all:'unset', cursor:'pointer', display:'block', width:'100%',
+          background:active?'#111':'#fff', borderRadius:20, padding:'14px 12px 12px',
+          border:active?'none':'0.5px solid rgba(0,0,0,0.06)',
+          boxShadow:active?'0 8px 24px rgba(0,0,0,0.13)':'0 1px 3px rgba(0,0,0,0.03)',
+          transition:'all 0.2s',
+        }}>
+          <div style={{marginBottom:12}}>
+            <div style={{width:28,height:28,borderRadius:999,
+              background:active?'rgba(255,255,255,0.12)':'#f3f2ec',
+              display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {glyphs[account.key](col)}
+            </div>
           </div>
+          <div style={{fontSize:10,letterSpacing:0.5,textTransform:'uppercase',
+            opacity:active?0.6:0.5,fontWeight:600,marginBottom:4,color:col}}>{account.label}</div>
+          <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(18px,5vw,22px)',
+            fontWeight:500,letterSpacing:-0.5,lineHeight:1.1,fontFeatureSettings:'"tnum"',color:col}}>
+            {fmtShort(balance)}<span style={{fontSize:13,opacity:0.5,marginLeft:2}}>€</span>
+          </div>
+        </button>
+        <button onClick={e=>{e.stopPropagation();onEdit();}} style={{
+          all:'unset',cursor:'pointer',position:'absolute',bottom:8,right:8,
+          width:26,height:26,borderRadius:8,
+          background:active?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.05)',
+          display:'flex',alignItems:'center',justifyContent:'center',
+        }}>{Icon.pencil(13,col)}</button>
+      </div>
+    );
+  }
 
-          <div style={{ display:'flex', background:'#ede8dc', borderRadius:14, padding:3, marginBottom:20, position:'relative' }}>
-            <div style={{
-              position:'absolute', top:3, bottom:3, width:'calc(50% - 3px)',
-              left: range==='week' ? 3 : 'calc(50%)',
-              background:'#fff', borderRadius:11, boxShadow:'0 1px 3px rgba(0,0,0,0.08)',
-              transition:'left 0.2s cubic-bezier(0.32,0.72,0,1)',
-            }}/>
-            {[['week','Settimana'],['month','6 mesi']].map(([r,lbl]) => (
-              <button key={r} onClick={() => setRange(r)} style={{
-                all:'unset', cursor:'pointer', flex:1, textAlign:'center',
-                padding:'9px 0', fontSize:14, fontWeight:600, position:'relative',
-                color: range===r ? '#111' : 'rgba(0,0,0,0.45)',
-              }}>{lbl}</button>
+  function TxRow({ tx, last, onDelete }) {
+    const isIn = tx.type==='in';
+    const acct = ACCOUNTS.find(a=>a.key===tx.account)?.label ?? tx.account;
+    const diff = dateDiffDays(tx.date);
+    const dateLabel = diff===0?'Oggi':diff===1?'Ieri':new Date(tx.date).toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+    return (
+      <div style={{display:'flex',alignItems:'center',gap:12,padding:'13px 0',
+        borderBottom:last?'none':'0.5px solid rgba(0,0,0,0.06)'}}>
+        <div style={{width:38,height:38,borderRadius:999,flexShrink:0,
+          background:isIn?'rgba(74,103,65,0.1)':'#f3f2ec',
+          display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {isIn?Icon.arrowUp(15,'#4a6741'):Icon.arrowDown(15,'#6a6660')}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:500,marginBottom:2,
+            whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{tx.note}</div>
+          <div style={{fontSize:12,color:'rgba(0,0,0,0.45)'}}>{tx.category} · {acct} · {dateLabel}</div>
+        </div>
+        <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:16,fontWeight:500,
+          fontFeatureSettings:'"tnum"',color:isIn?'#4a6741':'#111',flexShrink:0}}>
+          {isIn?'+':'−'}{Math.abs(tx.amount).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}€
+        </div>
+        {onDelete&&<button onClick={()=>onDelete(tx.id)} style={{
+          all:'unset',cursor:'pointer',width:32,height:32,flexShrink:0,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          borderRadius:8,background:'rgba(184,92,78,0.08)'}}>
+          {Icon.trash(15)}</button>}
+      </div>
+    );
+  }
+
+  function HomeScreen({ transactions, balances, accent, onAdd, onOpenTx, activeFilter, setActiveFilter, onEditBalance }) {
+    const total = balances.cash+balances.card+balances.invest;
+    const daily = computeDaily(transactions);
+    const weekIn  = daily.reduce((s,d)=>s+d.in, 0);
+    const weekOut = daily.reduce((s,d)=>s+d.out, 0);
+    const { saluto, giorno } = getDayGreeting();
+    const shown = (activeFilter==='all'?transactions:transactions.filter(t=>t.account===activeFilter))
+      .slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,7);
+    return (
+      <div style={{padding:'0 18px 150px'}}>
+        <div style={{paddingTop:14,paddingBottom:22}}>
+          <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>{saluto} — {giorno}</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Le tue finanze</div>
+        </div>
+
+        <div style={{marginBottom:22}}>
+          <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.8,marginBottom:8,fontWeight:600}}>Saldo totale</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:14}}>
+            <div style={{fontFamily:'Fraunces,Georgia,serif',fontWeight:500,fontSize:'clamp(44px,14vw,60px)',letterSpacing:-2,lineHeight:1,fontFeatureSettings:'"tnum"'}}>
+              {total.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}
+            </div>
+            <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(22px,6vw,30px)',fontWeight:400,opacity:0.45}}>€</div>
+          </div>
+          <div style={{display:'flex',gap:16,fontSize:13,alignItems:'center'}}>
+            <span style={{color:'#4a6741',display:'inline-flex',alignItems:'center',gap:4}}>
+              {Icon.arrowUp(12,'#4a6741')} +{weekIn.toFixed(0)} €
+            </span>
+            <span style={{color:'rgba(0,0,0,0.5)',display:'inline-flex',alignItems:'center',gap:4}}>
+              {Icon.arrowDown(12,'#6a6660')} −{weekOut.toFixed(0)} €
+            </span>
+            <span style={{color:'rgba(0,0,0,0.35)',marginLeft:'auto',fontSize:12}}>questa settimana</span>
+          </div>
+        </div>
+
+        <div style={{background:'#fff',borderRadius:22,padding:'16px 16px 12px',
+          border:'0.5px solid rgba(0,0,0,0.06)',marginBottom:14}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:600}}>Andamento · 7 giorni</div>
+            <div style={{fontSize:11,color:'rgba(0,0,0,0.4)',fontFamily:'ui-monospace,Menlo,monospace'}}>
+              NET {weekIn-weekOut>=0?'+':'−'}{Math.abs(weekIn-weekOut).toFixed(0)}€
+            </div>
+          </div>
+          <Sparkline daily={daily} accent={accent.pos}/>
+        </div>
+
+        <div style={{display:'flex',gap:8,marginBottom:28}}>
+          {ACCOUNTS.map(a=>(
+            <AccountCard key={a.key} account={a} balance={balances[a.key]}
+              active={activeFilter===a.key}
+              onClick={()=>setActiveFilter(activeFilter===a.key?'all':a.key)}
+              onEdit={()=>onEditBalance(a.key)}/>
+          ))}
+        </div>
+
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <div style={{fontSize:15,fontWeight:700}}>
+            {activeFilter==='all'?'Movimenti recenti':ACCOUNTS.find(a=>a.key===activeFilter)?.label}
+          </div>
+          <button style={{all:'unset',cursor:'pointer',fontSize:12,color:'rgba(0,0,0,0.45)',fontWeight:500}} onClick={onOpenTx}>
+            Vedi tutti →
+          </button>
+        </div>
+        <div style={{background:'#fff',borderRadius:20,padding:'0 14px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
+          {shown.length===0
+            ? <div style={{padding:'28px 0',textAlign:'center',fontSize:13,color:'rgba(0,0,0,0.35)'}}>Nessun movimento</div>
+            : shown.map((tx,i)=><TxRow key={tx.id} tx={tx} last={i===shown.length-1}/>)
+          }
+        </div>
+      </div>
+    );
+  }
+  Object.assign(window,{HomeScreen,TxRow,Sparkline,AccountCard});
+</script>
+
+<!-- ─── ADD TRANSACTION MODAL ──────────────────────────────── -->
+<script type="text/babel">
+  function AddModal({ open, onClose, onSubmit, accent }) {
+    const [amount,   setAmount]   = useState('');
+    const [type,     setType]     = useState('out');
+    const [account,  setAccount]  = useState('cash');
+    const [category, setCategory] = useState('Cibo');
+    const [note,     setNote]     = useState('');
+
+    useEffect(()=>{ if(!open) setTimeout(()=>{setAmount('');setType('out');setAccount('cash');setCategory('Cibo');setNote('');},360); },[open]);
+    useEffect(()=>{ setCategory(type==='in'?'Serata':'Cibo'); },[type]);
+
+    const onDigit = d=>{
+      if(amount.length>=7)return;
+      if(d==='0'&&amount===''){setAmount('0');return;}
+      if(amount==='0'){setAmount(d);return;}
+      setAmount(amount+d);
+    };
+    const quickFill = v=>{setType('in');setAccount('cash');setCategory('Serata');setNote('Serata al locale');setAmount(String(v));};
+    const canSave = parseFloat(amount)>0;
+    const save = ()=>{ if(!canSave)return; onSubmit({type,account,category,amount:parseFloat(amount),note:note||category}); onClose(); };
+
+    return (
+      <BottomSheet open={open} onClose={onClose} zIndex={200}>
+        <div style={{padding:'0 20px'}}>
+          <div style={{display:'flex',background:'#ede8dc',borderRadius:14,padding:3,marginBottom:16,position:'relative'}}>
+            <div style={{position:'absolute',top:3,bottom:3,width:'calc(50% - 3px)',
+              left:type==='out'?3:'calc(50%)',background:'#fff',borderRadius:11,
+              boxShadow:'0 1px 3px rgba(0,0,0,0.08)',transition:'left 0.2s cubic-bezier(0.32,0.72,0,1)'}}/>
+            {[['out','Spesa'],['in','Entrata']].map(([t,lbl])=>(
+              <button key={t} onClick={()=>setType(t)} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+                padding:'9px 0',fontSize:14,fontWeight:600,position:'relative',
+                color:type===t?'#111':'rgba(0,0,0,0.45)'}}>{lbl}</button>
             ))}
           </div>
 
-          <div style={{ background:'#fff', borderRadius:22, padding:'18px 16px 14px',
-            border:'0.5px solid rgba(0,0,0,0.06)', marginBottom:14 }}>
-            {range==='week' ? (
-              <>
-                <div style={{ display:'flex', gap:28, marginBottom:16 }}>
-                  {[['Entrate','+'+weekIn.toFixed(0)+'€',accent.pos],['Uscite','−'+weekOut.toFixed(0)+'€','#111']].map(([lbl,val,col]) => (
-                    <div key={lbl}>
-                      <div style={{ fontSize:11, color:'rgba(0,0,0,0.45)', textTransform:'uppercase', letterSpacing:0.5, marginBottom:4 }}>{lbl}</div>
-                      <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:24, fontWeight:500, color:col, fontFeatureSettings:'"tnum"' }}>
-                        {val}<span style={{ fontSize:14, opacity:0.45, marginLeft:2 }}>€</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <BarChart daily={daily} accent={accent}/>
-                <div style={{ display:'flex', gap:14, marginTop:10, fontSize:11, color:'rgba(0,0,0,0.45)', alignItems:'center' }}>
-                  {[[accent.pos,'Entrate'],['rgba(0,0,0,0.28)','Uscite']].map(([bg,lbl]) => (
-                    <span key={lbl} style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
-                      <span style={{ width:10, height:10, borderRadius:2, background:bg, display:'inline-block' }}/>
-                      {lbl}
-                    </span>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ marginBottom:14 }}>
-                  <div style={{ fontSize:11, color:'rgba(0,0,0,0.45)', textTransform:'uppercase', letterSpacing:0.5, marginBottom:4 }}>Saldo totale · oggi</div>
-                  <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
-                    <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:30, fontWeight:500, letterSpacing:-1, fontFeatureSettings:'"tnum"' }}>
-                      {total.toLocaleString('it-IT',{maximumFractionDigits:0})}
-                    </div>
-                    <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:18, opacity:0.45 }}>€</div>
-                  </div>
-                </div>
-                <LineChart history={monthlyHistory} accent={accent}/>
-              </>
-            )}
+          <div style={{textAlign:'center',padding:'8px 0 18px'}}>
+            <span style={{fontFamily:'Fraunces,Georgia,serif',fontSize:52,fontWeight:500,
+              letterSpacing:-2,lineHeight:1,fontFeatureSettings:'"tnum"',
+              color:amount===''?'rgba(0,0,0,0.18)':type==='in'?'#4a6741':'#111'}}>
+              {type==='in'?'+':'−'}{(amount||'0').replace('.',',')}
+            </span>
+            <span style={{fontFamily:'Fraunces,Georgia,serif',fontSize:22,opacity:0.35,marginLeft:4}}>€</span>
           </div>
 
-          <div style={{ background:'#fff', borderRadius:22, padding:'16px 18px', border:'0.5px solid rgba(0,0,0,0.06)' }}>
-            <div style={{ fontSize:14, fontWeight:700, marginBottom:16 }}>Spese per categoria</div>
-            {catList.length===0
-              ? <div style={{ fontSize:13, color:'rgba(0,0,0,0.35)', padding:'8px 0' }}>Nessuna spesa registrata</div>
-              : catList.map(([name,val]) => (
-                <div key={name} style={{ marginBottom:14 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
-                    <span style={{ fontSize:13 }}>{name}</span>
-                    <span style={{ fontSize:13, fontFamily:'Fraunces,Georgia,serif', fontFeatureSettings:'"tnum"' }}>{fmtEUR(val)}</span>
-                  </div>
-                  <div style={{ height:6, borderRadius:99, background:'#ede8dc', overflow:'hidden' }}>
-                    <div style={{ height:'100%', width:`${(val/catTotal)*100}%`, background:'#111', borderRadius:99, transition:'width 0.4s' }}/>
-                  </div>
-                </div>
-              ))
-            }
+          {type==='in'&&<div style={{marginBottom:16}}>
+            <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Serata — accesso rapido</div>
+            <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
+              {[100,150,180,200,250].map(v=><Chip key={v} label={`+${v}€`} active={amount===String(v)} onClick={()=>quickFill(v)}/>)}
+            </div>
+          </div>}
+
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Conto</div>
+            <div style={{display:'flex',gap:6}}>
+              {ACCOUNTS.map(a=><Chip key={a.key} label={a.label} active={account===a.key} onClick={()=>setAccount(a.key)}/>)}
+            </div>
           </div>
+
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Categoria</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {CATEGORIES.filter(c=>c.kind===type).map(c=><Chip key={c.key} label={c.key} active={category===c.key} onClick={()=>setCategory(c.key)}/>)}
+            </div>
+          </div>
+
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Nota (opzionale)"
+            style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:12,
+              padding:'12px 14px',fontSize:14,marginBottom:12,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.08)'}}/>
+
+          <Keypad onDigit={onDigit} onBack={()=>setAmount(amount.slice(0,-1))} onDot={()=>{if(!amount.includes('.'))setAmount((amount||'0')+'.');}}/>
+
+          <button onClick={save} disabled={!canSave} style={{
+            all:'unset',cursor:canSave?'pointer':'default',display:'block',width:'100%',
+            textAlign:'center',padding:'16px 0',marginTop:10,
+            background:canSave?'#111':'#d6d3cc',color:'#fff',borderRadius:16,fontSize:16,fontWeight:700,
+          }}>{type==='in'?'Aggiungi entrata':'Registra spesa'}</button>
         </div>
-      );
-    }
+      </BottomSheet>
+    );
+  }
+  Object.assign(window,{AddModal});
+</script>
 
-    function GoalsScreen({ goals, setGoals, accent }) {
-      const [newModal, setNewModal] = useState(false);
-      const [newName,   setNewName]   = useState('');
-      const [newTarget, setNewTarget] = useState('');
+<!-- ─── CHARTS + GOALS ──────────────────────────────────────── -->
+<script type="text/babel">
+  function BarChart({ daily, accent }) {
+    const VW=320,VH=160,P=6;
+    const max=Math.max(...daily.map(d=>Math.max(d.in,d.out)),100);
+    const colW=(VW-P*2)/daily.length, barW=colW*0.34;
+    const labels=['L','M','M','G','V','S','D'];
+    return (
+      <svg viewBox={`0 0 ${VW} ${VH+24}`} width="100%" style={{display:'block'}}>
+        <line x1={P} y1={VH-20} x2={VW-P} y2={VH-20} stroke="#000" strokeOpacity="0.08"/>
+        {daily.map((d,i)=>{
+          const cx=P+colW*(i+0.5),inH=(d.in/max)*(VH-40),outH=(d.out/max)*(VH-40);
+          return (<g key={i}>
+            <rect x={cx-barW-1} y={VH-20-inH} width={barW} height={inH||0.5} rx="3" fill={accent.pos} opacity="0.85"/>
+            <rect x={cx+1} y={VH-20-outH} width={barW} height={outH||0.5} rx="3" fill="#111" opacity="0.28"/>
+            <text x={cx} y={VH-5} textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace" fontSize="10"
+              fill={i===6?'#111':'rgba(0,0,0,0.4)'} fontWeight={i===6?600:400}>{labels[i]}</text>
+          </g>);
+        })}
+      </svg>
+    );
+  }
 
-      const addGoal = () => {
-        if (!newName.trim() || parseFloat(newTarget) <= 0) return;
-        const updated = [...goals, { id:Date.now(), name:newName.trim(), current:0, target:parseFloat(newTarget) }];
-        setGoals(updated); lsSet('finanze.goals', updated);
-        setNewName(''); setNewTarget(''); setNewModal(false);
-      };
+  function LineChart({ history, accent }) {
+    const VW=320,VH=180,P=10;
+    const vals=history.map(h=>h.total);
+    const min=Math.min(...vals)*0.92,max=Math.max(...vals)*1.04;
+    const stepX=(VW-P*2)/(vals.length-1);
+    const pts=vals.map((v,i)=>[P+i*stepX,VH-28-((v-min)/(max-min))*(VH-50)]);
+    const path=pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+    const area=path+` L${VW-P},${VH-28} L${P},${VH-28} Z`;
+    return (
+      <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{display:'block'}}>
+        <defs><linearGradient id="bal-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={accent.pos} stopOpacity="0.22"/>
+          <stop offset="100%" stopColor={accent.pos} stopOpacity="0"/>
+        </linearGradient></defs>
+        <path d={area} fill="url(#bal-fill)"/>
+        <path d={path} fill="none" stroke={accent.pos} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        {pts.map(([x,y],i)=>(
+          <g key={i}>
+            <circle cx={x} cy={y} r={i===pts.length-1?4:2.5}
+              fill={i===pts.length-1?'#111':'#fff'}
+              stroke={i===pts.length-1?'#fff':accent.pos} strokeWidth="1.5"/>
+            <text x={x} y={VH-8} textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace" fontSize="10"
+              fill={i===pts.length-1?'#111':'rgba(0,0,0,0.4)'} fontWeight={i===pts.length-1?600:400}>{history[i].label}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  }
 
-      return (
-        <div style={{ padding:'0 18px 150px' }}>
-          <div style={{ paddingTop:14, paddingBottom:18 }}>
-            <div style={{ fontSize:13, color:'rgba(0,0,0,0.45)', marginBottom:3 }}>I tuoi traguardi</div>
-            <div style={{ fontSize:24, fontWeight:700, letterSpacing:-0.5 }}>Obiettivi</div>
-          </div>
-
-          {goals.map(g => {
-            const pct = Math.min(100,(g.current/g.target)*100);
-            const update = (delta) => {
-              const updated = goals.map(x => x.id===g.id ? {...x, current:Math.min(x.target, Math.max(0, x.current+delta))} : x);
-              setGoals(updated); lsSet('finanze.goals', updated);
-            };
-            const del = () => { const u=goals.filter(x=>x.id!==g.id); setGoals(u); lsSet('finanze.goals',u); };
-            return (
-              <div key={g.id} style={{ background:'#fff', borderRadius:22, padding:'18px 18px 16px',
-                border:'0.5px solid rgba(0,0,0,0.06)', marginBottom:12 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:16, fontWeight:700, marginBottom:3 }}>{g.name}</div>
-                    <div style={{ fontSize:12, color:'rgba(0,0,0,0.45)' }}>
-                      {g.target-g.current > 0 ? `Mancano ${fmtEUR(g.target-g.current,{decimals:0})}` : '🎉 Obiettivo raggiunto!'}
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <div style={{ fontFamily:'Fraunces,Georgia,serif', fontSize:22, fontWeight:500, fontFeatureSettings:'"tnum"' }}>
-                      {Math.round(pct)}<span style={{ fontSize:13, opacity:0.45 }}>%</span>
-                    </div>
-                    <button onClick={del} style={{ all:'unset', cursor:'pointer', width:30, height:30,
-                      display:'flex', alignItems:'center', justifyContent:'center',
-                      borderRadius:8, background:'rgba(184,92,78,0.08)' }}>
-                      {Icon.trash(15)}
-                    </button>
-                  </div>
-                </div>
-                <div style={{ height:8, borderRadius:99, background:'#ede8dc', overflow:'hidden', marginBottom:10 }}>
-                  <div style={{ height:'100%', width:`${pct}%`, background:accent.pos, borderRadius:99, transition:'width 0.4s' }}/>
-                </div>
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13,
-                  color:'rgba(0,0,0,0.5)', fontFamily:'Fraunces,Georgia,serif', fontFeatureSettings:'"tnum"', marginBottom:12 }}>
-                  <b style={{ color:'#111', fontWeight:600 }}>{fmtEUR(g.current,{decimals:0})}</b>
-                  <span>di {fmtEUR(g.target,{decimals:0})}</span>
-                </div>
-                {g.current < g.target && (
-                  <div style={{ display:'flex', gap:6 }}>
-                    {[10,50,100].map(v => (
-                      <button key={v} onClick={() => update(v)} style={{
-                        all:'unset', cursor:'pointer', padding:'7px 12px', borderRadius:99,
-                        background:'#f3f2ec', fontSize:12, fontWeight:600, color:'#111',
-                        border:'0.5px solid rgba(0,0,0,0.08)',
-                      }}>+{v}€</button>
-                    ))}
-                    <button onClick={() => update(-50)} style={{
-                      all:'unset', cursor:'pointer', padding:'7px 12px', borderRadius:99,
-                      background:'rgba(184,92,78,0.06)', fontSize:12, fontWeight:600, color:'#b85c4e',
-                      border:'0.5px solid rgba(184,92,78,0.12)',
-                    }}>−50€</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          <button onClick={() => setNewModal(true)} style={{
-            all:'unset', cursor:'pointer', display:'block', width:'100%',
-            textAlign:'center', padding:'15px 0', marginTop:4,
-            background:'#fff', border:'0.5px dashed rgba(0,0,0,0.18)',
-            borderRadius:20, fontSize:14, color:'rgba(0,0,0,0.55)', fontWeight:600,
-          }}>+ Nuovo obiettivo</button>
-
-          {newModal && (
+  function ChartScreen({ transactions, balances, accent, baseBalances }) {
+    const [range,setRange]=useState('week');
+    const daily=computeDaily(transactions);
+    const weekIn=daily.reduce((s,d)=>s+d.in,0), weekOut=daily.reduce((s,d)=>s+d.out,0);
+    const total=balances.cash+balances.card+balances.invest;
+    const monthlyHistory=useMemo(()=>buildMonthlyHistory(transactions,baseBalances),[transactions,baseBalances]);
+    const byCat={};
+    for(const t of transactions) if(t.type==='out') byCat[t.category]=(byCat[t.category]||0)+t.amount;
+    const catList=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+    const catTotal=catList.reduce((s,[,v])=>s+v,0)||1;
+    return (
+      <div style={{padding:'0 18px 150px'}}>
+        <div style={{paddingTop:14,paddingBottom:18}}>
+          <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>Statistiche</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Andamento</div>
+        </div>
+        <div style={{display:'flex',background:'#ede8dc',borderRadius:14,padding:3,marginBottom:20,position:'relative'}}>
+          <div style={{position:'absolute',top:3,bottom:3,width:'calc(50% - 3px)',
+            left:range==='week'?3:'calc(50%)',background:'#fff',borderRadius:11,
+            boxShadow:'0 1px 3px rgba(0,0,0,0.08)',transition:'left 0.2s cubic-bezier(0.32,0.72,0,1)'}}/>
+          {[['week','Settimana'],['month','6 mesi']].map(([r,lbl])=>(
+            <button key={r} onClick={()=>setRange(r)} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'9px 0',fontSize:14,fontWeight:600,position:'relative',
+              color:range===r?'#111':'rgba(0,0,0,0.45)'}}>{lbl}</button>
+          ))}
+        </div>
+        <div style={{background:'#fff',borderRadius:22,padding:'18px 16px 14px',border:'0.5px solid rgba(0,0,0,0.06)',marginBottom:14}}>
+          {range==='week'?(
             <>
-              <div onClick={() => setNewModal(false)} style={{ position:'fixed', inset:0,
-                background:'rgba(15,15,15,0.4)', backdropFilter:'blur(8px)',
-                WebkitBackdropFilter:'blur(8px)', zIndex:80 }}/>
-              <div style={{ position:'fixed', left:16, right:16,
-                bottom:'max(24px, env(safe-area-inset-bottom))',
-                zIndex:81, background:'#fafaf7', borderRadius:24,
-                padding:'22px 22px 24px', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
-                <div style={{ fontSize:17, fontWeight:700, marginBottom:18 }}>Nuovo obiettivo</div>
-                {[
-                  [newName, setNewName, 'Nome (es. Vacanza, Auto)', 'text'],
-                  [newTarget, setNewTarget, 'Obiettivo in €', 'decimal'],
-                ].map(([val, set, ph, mode], i) => (
-                  <input key={i} value={val} onChange={e => set(e.target.value)}
-                    placeholder={ph} type={mode==='decimal'?'number':'text'} inputMode={mode}
-                    style={{ width:'100%', border:'none', outline:'none', background:'#fff',
-                      borderRadius:12, padding:'13px 14px', fontSize:15,
-                      marginBottom:12, boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)' }}/>
+              <div style={{display:'flex',gap:28,marginBottom:16}}>
+                {[['Entrate','+'+weekIn.toFixed(0)+'€',accent.pos],['Uscite','−'+weekOut.toFixed(0)+'€','#111']].map(([lbl,val,col])=>(
+                  <div key={lbl}>
+                    <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{lbl}</div>
+                    <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:24,fontWeight:500,color:col,fontFeatureSettings:'"tnum"'}}>
+                      {val}<span style={{fontSize:14,opacity:0.45,marginLeft:2}}>€</span>
+                    </div>
+                  </div>
                 ))}
-                <div style={{ display:'flex', gap:10, marginTop:4 }}>
-                  <button onClick={() => setNewModal(false)} style={{
-                    all:'unset', cursor:'pointer', flex:1, textAlign:'center',
-                    padding:'14px 0', background:'#ede8dc', borderRadius:14, fontSize:15, fontWeight:600,
-                  }}>Annulla</button>
-                  <button onClick={addGoal} style={{
-                    all:'unset', cursor:'pointer', flex:1, textAlign:'center',
-                    padding:'14px 0', background:'#111', color:'#fff',
-                    borderRadius:14, fontSize:15, fontWeight:700,
-                  }}>Crea</button>
+              </div>
+              <BarChart daily={daily} accent={accent}/>
+            </>
+          ):(
+            <>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>Saldo totale · oggi</div>
+                <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+                  <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:30,fontWeight:500,letterSpacing:-1,fontFeatureSettings:'"tnum"'}}>
+                    {total.toLocaleString('it-IT',{maximumFractionDigits:0})}
+                  </div>
+                  <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:18,opacity:0.45}}>€</div>
                 </div>
               </div>
+              <LineChart history={monthlyHistory} accent={accent}/>
             </>
           )}
         </div>
-      );
-    }
-
-    Object.assign(window, { ChartScreen, GoalsScreen });
-  </script>
-
-  <!-- ─── MAIN APP ───────────────────────────────────────────── -->
-  <script type="text/babel">
-    function TabBar({ tab, setTab, onAdd }) {
-      const tabs = [
-        { id:'home',   icon:Icon.home,   label:'Saldo'      },
-        { id:'charts', icon:Icon.chart,  label:'Statistiche'},
-        null, // slot per FAB
-        { id:'goals',  icon:Icon.target, label:'Obiettivi'  },
-        { id:'txs',    icon:Icon.wallet, label:'Movimenti'  },
-      ];
-      return (
-        <div style={{ flexShrink:0, background:'transparent',
-          paddingBottom:'max(10px, env(safe-area-inset-bottom))' }}>
-          <div style={{
-            margin:'0 14px 10px',
-            background:'rgba(250,250,247,0.94)',
-            backdropFilter:'blur(28px) saturate(200%)',
-            WebkitBackdropFilter:'blur(28px) saturate(200%)',
-            border:'0.5px solid rgba(0,0,0,0.07)',
-            borderRadius:30, padding:'6px 10px',
-            display:'flex', alignItems:'center',
-            boxShadow:'0 8px 30px rgba(0,0,0,0.08)',
-            position:'relative',
-          }}>
-            {tabs.map((t, i) => t === null ? (
-              <div key="fab-slot" style={{ width:64, flexShrink:0 }}/>
-            ) : (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{
-                all:'unset', cursor:'pointer', display:'flex', flexDirection:'column',
-                alignItems:'center', gap:3, flex:1, padding:'6px 0',
-              }}>
-                <div style={{ opacity: tab===t.id ? 1 : 0.3, transition:'opacity 0.18s' }}>
-                  {t.icon(22, '#111')}
+        <div style={{background:'#fff',borderRadius:22,padding:'16px 18px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Spese per categoria</div>
+          {catList.length===0
+            ?<div style={{fontSize:13,color:'rgba(0,0,0,0.35)',padding:'8px 0'}}>Nessuna spesa registrata</div>
+            :catList.map(([name,val])=>(
+              <div key={name} style={{marginBottom:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                  <span style={{fontSize:13}}>{name}</span>
+                  <span style={{fontSize:13,fontFamily:'Fraunces,Georgia,serif',fontFeatureSettings:'"tnum"'}}>{fmtEUR(val)}</span>
                 </div>
-                <div style={{ fontSize:10, fontWeight:tab===t.id?700:500, letterSpacing:0.1,
-                  color: tab===t.id ? '#111' : 'rgba(0,0,0,0.35)',
-                  transition:'color 0.18s' }}>{t.label}</div>
-              </button>
-            ))}
-
-            {/* FAB centrale */}
-            <button onClick={onAdd} style={{
-              all:'unset', cursor:'pointer',
-              position:'absolute', left:'50%', top:-22, transform:'translateX(-50%)',
-              width:58, height:58, borderRadius:999,
-              background:'#111', color:'#fff',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              boxShadow:'0 6px 20px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.12)',
-              transition:'transform 0.15s',
-            }}
-            onTouchStart={e => e.currentTarget.style.transform='translateX(-50%) scale(0.92)'}
-            onTouchEnd={e   => e.currentTarget.style.transform='translateX(-50%) scale(1)'}
-            >{Icon.plus(28,'#fff')}</button>
-          </div>
-        </div>
-      );
-    }
-
-    function TxListScreen({ transactions, onDelete }) {
-      const sorted = [...transactions].sort((a,b) => new Date(b.date)-new Date(a.date));
-      const groups = {};
-      for (const tx of sorted) {
-        const diff = dateDiffDays(tx.date);
-        const key = diff===0?'Oggi':diff===1?'Ieri'
-          : new Date(tx.date).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
-        (groups[key] ||= []).push(tx);
-      }
-      return (
-        <div style={{ padding:'0 18px 150px' }}>
-          <div style={{ paddingTop:14, paddingBottom:18 }}>
-            <div style={{ fontSize:13, color:'rgba(0,0,0,0.45)', marginBottom:3 }}>Tutti i movimenti</div>
-            <div style={{ fontSize:24, fontWeight:700, letterSpacing:-0.5 }}>Movimenti</div>
-          </div>
-          {Object.entries(groups).map(([label,txs]) => {
-            const sum = txs.reduce((s,t) => s+(t.type==='in'?1:-1)*t.amount, 0);
-            return (
-              <div key={label} style={{ marginBottom:20 }}>
-                <div style={{ display:'flex', justifyContent:'space-between',
-                  padding:'0 4px 8px', fontSize:11, textTransform:'uppercase',
-                  letterSpacing:0.6, color:'rgba(0,0,0,0.45)', fontWeight:600 }}>
-                  <span>{label}</span>
-                  <span style={{ fontFamily:'ui-monospace,Menlo,monospace', color: sum>=0?'#4a6741':'rgba(0,0,0,0.45)' }}>
-                    {sum>=0?'+':'−'}{Math.abs(sum).toFixed(0)}€
-                  </span>
-                </div>
-                <div style={{ background:'#fff', borderRadius:20, padding:'0 14px',
-                  border:'0.5px solid rgba(0,0,0,0.06)' }}>
-                  {txs.map((tx,i) => <TxRow key={tx.id} tx={tx} last={i===txs.length-1} onDelete={onDelete}/>)}
+                <div style={{height:6,borderRadius:99,background:'#ede8dc',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${(val/catTotal)*100}%`,background:'#111',borderRadius:99,transition:'width 0.4s'}}/>
                 </div>
               </div>
-            );
-          })}
+            ))
+          }
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    function App() {
-      const [tab,          setTab]          = useState(() => localStorage.getItem('fin.tab') || 'home');
-      const [modalOpen,    setModalOpen]    = useState(false);
-      const [transactions, setTransactions] = useState(loadTransactions);
-      const [baseBalances, setBaseBalances] = useState(loadBaseBalances);
-      const [goals,        setGoals]        = useState(loadGoals);
-      const [activeFilter, setActiveFilter] = useState('all');
-      const [flashTotal,   setFlashTotal]   = useState(false);
-      const [editAccount,  setEditAccount]  = useState(null); // key del conto da modificare
+  // ── Obiettivi ─────────────────────────────────────────────
+  function GoalsScreen({ goals, setGoals, accent }) {
+    return (
+      <div style={{padding:'0 18px 150px'}}>
+        <div style={{paddingTop:14,paddingBottom:18}}>
+          <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>I tuoi traguardi</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Obiettivi</div>
+        </div>
+        {goals.map(g=>{
+          const pct=Math.min(100,(g.current/g.target)*100);
+          const update=delta=>{const u=goals.map(x=>x.id===g.id?{...x,current:Math.min(x.target,Math.max(0,x.current+delta))}:x);setGoals(u);lsSet('finanze.goals',u);};
+          const del=()=>{const u=goals.filter(x=>x.id!==g.id);setGoals(u);lsSet('finanze.goals',u);};
+          return (
+            <div key={g.id} style={{background:'#fff',borderRadius:22,padding:'18px 18px 16px',
+              border:'0.5px solid rgba(0,0,0,0.06)',marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:16,fontWeight:700,marginBottom:3}}>{g.name}</div>
+                  <div style={{fontSize:12,color:'rgba(0,0,0,0.45)'}}>
+                    {g.target-g.current>0?`Mancano ${fmtEUR(g.target-g.current,{decimals:0})}`:'Obiettivo raggiunto! 🎉'}
+                  </div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:22,fontWeight:500,fontFeatureSettings:'"tnum"'}}>
+                    {Math.round(pct)}<span style={{fontSize:13,opacity:0.45}}>%</span>
+                  </div>
+                  <button onClick={del} style={{all:'unset',cursor:'pointer',width:30,height:30,
+                    display:'flex',alignItems:'center',justifyContent:'center',
+                    borderRadius:8,background:'rgba(184,92,78,0.08)'}}>{Icon.trash(15)}</button>
+                </div>
+              </div>
+              <div style={{height:8,borderRadius:99,background:'#ede8dc',overflow:'hidden',marginBottom:10}}>
+                <div style={{height:'100%',width:`${pct}%`,background:accent.pos,borderRadius:99,transition:'width 0.4s'}}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'rgba(0,0,0,0.5)',
+                fontFamily:'Fraunces,Georgia,serif',fontFeatureSettings:'"tnum"',marginBottom:12}}>
+                <b style={{color:'#111',fontWeight:600}}>{fmtEUR(g.current,{decimals:0})}</b>
+                <span>di {fmtEUR(g.target,{decimals:0})}</span>
+              </div>
+              {g.current<g.target&&<div style={{display:'flex',gap:6}}>
+                {[10,50,100].map(v=><button key={v} onClick={()=>update(v)} style={{all:'unset',cursor:'pointer',
+                  padding:'7px 12px',borderRadius:99,background:'#f3f2ec',fontSize:12,fontWeight:600,
+                  border:'0.5px solid rgba(0,0,0,0.08)'}}>+{v}€</button>)}
+                <button onClick={()=>update(-50)} style={{all:'unset',cursor:'pointer',padding:'7px 12px',
+                  borderRadius:99,background:'rgba(184,92,78,0.06)',fontSize:12,fontWeight:600,
+                  color:'#b85c4e',border:'0.5px solid rgba(184,92,78,0.12)'}}>−50€</button>
+              </div>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
-      useEffect(() => { localStorage.setItem('fin.tab', tab); }, [tab]);
+  Object.assign(window,{ChartScreen,GoalsScreen});
+</script>
 
-      const accent = ACCENTS.sage;
-      const balances = useMemo(() => computeBalances(transactions, baseBalances), [transactions, baseBalances]);
+<!-- ─── NUOVO OBIETTIVO MODAL (globale, copre la tab bar) ──── -->
+<script type="text/babel">
+  function NewGoalModal({ open, onClose, onAdd }) {
+    const [name,   setName]   = useState('');
+    const [target, setTarget] = useState('');
+    useEffect(()=>{ if(!open){setTimeout(()=>{setName('');setTarget('');},360);} },[open]);
+    const confirm = ()=>{
+      if(!name.trim()||parseFloat(target)<=0) return;
+      onAdd(name.trim(), parseFloat(target));
+      onClose();
+    };
+    return (
+      <BottomSheet open={open} onClose={onClose} zIndex={400}>
+        <div style={{padding:'6px 22px 0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+            <div style={{fontSize:18,fontWeight:700}}>Nuovo obiettivo</div>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',width:32,height:32,
+              display:'flex',alignItems:'center',justifyContent:'center',
+              borderRadius:999,background:'rgba(0,0,0,0.06)'}}>{Icon.close(16)}</button>
+          </div>
+          {[[name,setName,'Nome obiettivo (es. Vacanza)','text'],[target,setTarget,'Importo da raggiungere (€)','decimal']].map(([v,set,ph,mode],i)=>(
+            <input key={i} value={v} onChange={e=>set(e.target.value)} placeholder={ph}
+              type={mode==='decimal'?'number':'text'} inputMode={mode}
+              style={{width:'100%',border:'none',outline:'none',background:'#fff',
+                borderRadius:14,padding:'14px 16px',fontSize:15,marginBottom:12,
+                boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)'}}/>
+          ))}
+          <div style={{display:'flex',gap:10,marginTop:6}}>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'15px 0',background:'#ede8dc',borderRadius:14,fontSize:15,fontWeight:600}}>Annulla</button>
+            <button onClick={confirm} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'15px 0',background:'#111',color:'#fff',borderRadius:14,fontSize:15,fontWeight:700}}>Crea</button>
+          </div>
+        </div>
+      </BottomSheet>
+    );
+  }
+  Object.assign(window,{NewGoalModal});
+</script>
 
-      const addTx = useCallback(data => {
-        const updated = [{ id:Date.now(), ...data, date:new Date() }, ...transactions];
-        setTransactions(updated);
-        lsSet('finanze.txs', updated);
-        setFlashTotal(true);
-        setTimeout(() => setFlashTotal(false), 600);
-      }, [transactions]);
+<!-- ─── DA PAGARE SCREEN ───────────────────────────────────── -->
+<script type="text/babel">
+  function NewDebtModal({ open, onClose, onAdd }) {
+    const [name,    setName]    = useState('');
+    const [amount,  setAmount]  = useState('');
+    const [dueDate, setDueDate] = useState('');
+    const [cat,     setCat]     = useState('Altro');
 
-      const deleteTx = useCallback(id => {
-        const updated = transactions.filter(t => t.id !== id);
-        setTransactions(updated);
-        lsSet('finanze.txs', updated);
-      }, [transactions]);
+    useEffect(()=>{ if(!open) setTimeout(()=>{setName('');setAmount('');setDueDate('');setCat('Altro');},360); },[open]);
 
-      // L'utente imposta il saldo reale attuale → back-calcoliamo il baseBalance
-      const handleSaveBalance = useCallback((accountKey, newActualBalance) => {
-        const delta = transactions
-          .filter(t => t.account === accountKey)
-          .reduce((s,t) => s + (t.type==='in' ? t.amount : -t.amount), 0);
-        const updated = { ...baseBalances, [accountKey]: newActualBalance - delta };
-        setBaseBalances(updated);
-        lsSet('finanze.bases', updated);
-      }, [transactions, baseBalances]);
+    const confirm = ()=>{
+      const n=parseFloat(amount);
+      if(!name.trim()||isNaN(n)||n<=0||!dueDate) return;
+      onAdd({name:name.trim(),amount:n,dueDate,category:cat});
+      onClose();
+    };
 
-      let screen;
-      if (tab==='home')
-        screen = <HomeScreen transactions={transactions} balances={balances} accent={accent}
-          onAdd={() => setModalOpen(true)} onOpenTx={() => setTab('txs')}
-          activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-          onEditBalance={key => setEditAccount(key)}/>;
-      else if (tab==='charts')
-        screen = <ChartScreen transactions={transactions} balances={balances} accent={accent} baseBalances={baseBalances}/>;
-      else if (tab==='goals')
-        screen = <GoalsScreen goals={goals} setGoals={setGoals} accent={accent}/>;
-      else if (tab==='txs')
-        screen = <TxListScreen transactions={transactions} onDelete={deleteTx}/>;
+    // default due date = fine mese corrente
+    useEffect(()=>{
+      if(open && !dueDate) {
+        const now=new Date(); const end=new Date(now.getFullYear(),now.getMonth()+1,0);
+        setDueDate(end.toISOString().slice(0,10));
+      }
+    },[open]);
 
-      return (
-        <div style={{ display:'flex', flexDirection:'column', height:'100dvh',
-          background:'#fafaf7', overflow:'hidden',
-          paddingTop:'env(safe-area-inset-top)',
-          paddingLeft:'env(safe-area-inset-left)',
-          paddingRight:'env(safe-area-inset-right)',
-        }}>
-          <div className="scroll-area" style={{
-            flex:1,
-            transition:'filter 0.3s',
-            filter: flashTotal ? 'brightness(1.025)' : 'none',
-          }}>
-            {screen}
+    return (
+      <BottomSheet open={open} onClose={onClose} zIndex={400}>
+        <div style={{padding:'6px 22px 0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+            <div style={{fontSize:18,fontWeight:700}}>Nuovo impegno</div>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',width:32,height:32,
+              display:'flex',alignItems:'center',justifyContent:'center',
+              borderRadius:999,background:'rgba(0,0,0,0.06)'}}>{Icon.close(16)}</button>
           </div>
 
-          <TabBar tab={tab} setTab={setTab} onAdd={() => setModalOpen(true)}/>
+          <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Descrizione</div>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Es. Affitto, Bolletta, Prestito..."
+            style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:14,
+              padding:'14px 16px',fontSize:15,marginBottom:16,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)'}}/>
 
-          <AddModal open={modalOpen} onClose={() => setModalOpen(false)} onSubmit={addTx} accent={accent}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+            <div>
+              <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Importo (€)</div>
+              <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0,00"
+                type="number" inputMode="decimal"
+                style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:14,
+                  padding:'14px 16px',fontSize:15,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)'}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Scadenza</div>
+              <input value={dueDate} onChange={e=>setDueDate(e.target.value)} type="date"
+                style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:14,
+                  padding:'14px 12px',fontSize:13,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)',color:'#111'}}/>
+            </div>
+          </div>
 
-          <EditBalanceModal
-            open={editAccount !== null}
-            onClose={() => setEditAccount(null)}
-            account={editAccount}
-            currentBalance={editAccount ? balances[editAccount] : 0}
-            onSave={n => handleSaveBalance(editAccount, n)}
-          />
+          <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Categoria</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:20}}>
+            {DEBT_CATS.map(c=><Chip key={c} label={c} active={cat===c} onClick={()=>setCat(c)}/>)}
+          </div>
+
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'15px 0',background:'#ede8dc',borderRadius:14,fontSize:15,fontWeight:600}}>Annulla</button>
+            <button onClick={confirm} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'15px 0',background:'#111',color:'#fff',borderRadius:14,fontSize:15,fontWeight:700}}>Aggiungi</button>
+          </div>
         </div>
-      );
-    }
+      </BottomSheet>
+    );
+  }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
-  </script>
+  function DebtCard({ debt, onPay, onDelete }) {
+    const status = getDueStatus(debt.dueDate);
+    const bgMap = { overdue:'rgba(184,92,78,0.06)', today:'rgba(193,125,58,0.06)', soon:'rgba(193,125,58,0.04)', ok:'#fff' };
+    return (
+      <div style={{background:bgMap[status.level]||'#fff',borderRadius:20,padding:'16px 18px',
+        border:`0.5px solid ${status.level==='overdue'?'rgba(184,92,78,0.2)':'rgba(0,0,0,0.06)'}`,
+        marginBottom:10}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,marginBottom:4}}>{debt.name}</div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:12,color:status.color,fontWeight:500}}>{status.label}</span>
+              <span style={{fontSize:11,color:'rgba(0,0,0,0.35)'}}>· {debt.category}</span>
+            </div>
+          </div>
+          <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:20,fontWeight:500,
+            fontFeatureSettings:'"tnum"',color:status.level==='overdue'?'#b85c4e':'#111',
+            flexShrink:0,marginLeft:12}}>
+            {fmtEUR(debt.amount)}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>onPay(debt.id)} style={{all:'unset',cursor:'pointer',
+            display:'flex',alignItems:'center',gap:6,
+            flex:1,justifyContent:'center',
+            padding:'10px 0',background:'#111',color:'#fff',
+            borderRadius:12,fontSize:13,fontWeight:700}}>
+            {Icon.check(15,'#fff')} Pagato
+          </button>
+          <button onClick={()=>onDelete(debt.id)} style={{all:'unset',cursor:'pointer',
+            width:42,height:42,display:'flex',alignItems:'center',justifyContent:'center',
+            borderRadius:12,background:'rgba(184,92,78,0.08)'}}>
+            {Icon.trash(16)}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function PaidDebtRow({ debt, onDelete }) {
+    return (
+      <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',
+        borderBottom:'0.5px solid rgba(0,0,0,0.06)'}}>
+        <div style={{width:34,height:34,borderRadius:999,flexShrink:0,
+          background:'rgba(74,103,65,0.1)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {Icon.check(15,'#4a6741')}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:500,textDecoration:'line-through',color:'rgba(0,0,0,0.4)',marginBottom:2}}>{debt.name}</div>
+          <div style={{fontSize:12,color:'rgba(0,0,0,0.35)'}}>
+            {debt.paidDate ? `Pagato il ${new Date(debt.paidDate).toLocaleDateString('it-IT',{day:'numeric',month:'short'})}` : 'Pagato'}
+          </div>
+        </div>
+        <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:15,fontWeight:500,
+          fontFeatureSettings:'"tnum"',color:'rgba(0,0,0,0.35)',flexShrink:0}}>
+          {fmtEUR(debt.amount)}
+        </div>
+        <button onClick={()=>onDelete(debt.id)} style={{all:'unset',cursor:'pointer',
+          width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',
+          borderRadius:8,background:'rgba(184,92,78,0.06)'}}>
+          {Icon.trash(14)}
+        </button>
+      </div>
+    );
+  }
+
+  function DebtsScreen({ debts, setDebts, onNewDebt }) {
+    const pending = debts.filter(d=>!d.paid).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+    const paid    = debts.filter(d=>d.paid).sort((a,b)=>new Date(b.paidDate||0)-new Date(a.paidDate||0));
+    const totalDue = pending.reduce((s,d)=>s+d.amount,0);
+
+    const overdueCount = pending.filter(d=>getDueStatus(d.dueDate).level==='overdue').length;
+
+    const payDebt = id=>{
+      const u=debts.map(d=>d.id===id?{...d,paid:true,paidDate:new Date().toISOString().slice(0,10)}:d);
+      setDebts(u); lsSet('finanze.debts',u);
+    };
+    const deleteDebt = id=>{
+      const u=debts.filter(d=>d.id!==id); setDebts(u); lsSet('finanze.debts',u);
+    };
+
+    return (
+      <div style={{padding:'0 18px 150px'}}>
+        <div style={{paddingTop:14,paddingBottom:18}}>
+          <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>Scadenze e impegni</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Da pagare</div>
+        </div>
+
+        {/* Summary */}
+        {pending.length>0&&<div style={{background:overdueCount>0?'rgba(184,92,78,0.06)':'#fff',
+          borderRadius:22,padding:'18px 20px',marginBottom:20,
+          border:`0.5px solid ${overdueCount>0?'rgba(184,92,78,0.18)':'rgba(0,0,0,0.06)'}`}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.6,fontWeight:600,marginBottom:6}}>Totale da pagare</div>
+              <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(28px,8vw,36px)',fontWeight:500,
+                letterSpacing:-1,fontFeatureSettings:'"tnum"',color:overdueCount>0?'#b85c4e':'#111'}}>
+                {fmtEUR(totalDue)}
+              </div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:22,fontWeight:700,color:overdueCount>0?'#b85c4e':'#111'}}>{pending.length}</div>
+              <div style={{fontSize:12,color:'rgba(0,0,0,0.45)'}}>
+                {pending.length===1?'impegno':'impegni'}{overdueCount>0?<span style={{color:'#b85c4e',fontWeight:600}}> · {overdueCount} scaduti</span>:null}
+              </div>
+            </div>
+          </div>
+        </div>}
+
+        {/* Lista pending */}
+        {pending.length===0?(
+          <div style={{textAlign:'center',padding:'40px 0',color:'rgba(0,0,0,0.35)'}}>
+            <div style={{fontSize:32,marginBottom:12}}>✓</div>
+            <div style={{fontSize:15,fontWeight:600,marginBottom:4}}>Tutto in regola</div>
+            <div style={{fontSize:13}}>Nessun impegno da pagare</div>
+          </div>
+        ):pending.map(d=><DebtCard key={d.id} debt={d} onPay={payDebt} onDelete={deleteDebt}/>)}
+
+        {/* Aggiungi */}
+        <button onClick={onNewDebt} style={{all:'unset',cursor:'pointer',display:'block',width:'100%',
+          textAlign:'center',padding:'14px 0',marginTop:4,marginBottom:24,
+          background:'#fff',border:'0.5px dashed rgba(0,0,0,0.18)',
+          borderRadius:18,fontSize:14,color:'rgba(0,0,0,0.55)',fontWeight:600}}>
+          + Aggiungi impegno
+        </button>
+
+        {/* Pagati */}
+        {paid.length>0&&<>
+          <div style={{fontSize:13,fontWeight:600,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',
+            letterSpacing:0.5,marginBottom:10}}>Pagati di recente</div>
+          <div style={{background:'#fff',borderRadius:20,padding:'0 14px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
+            {paid.slice(0,5).map((d,i)=><PaidDebtRow key={d.id} debt={d} onDelete={deleteDebt} last={i===Math.min(4,paid.length-1)}/>)}
+          </div>
+        </>}
+      </div>
+    );
+  }
+  Object.assign(window,{DebtsScreen,NewDebtModal});
+</script>
+
+<!-- ─── MOVIMENTI SCREEN ───────────────────────────────────── -->
+<script type="text/babel">
+  function TxListScreen({ transactions, onDelete }) {
+    const sorted=[...transactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
+    const groups={};
+    for(const tx of sorted){
+      const diff=dateDiffDays(tx.date);
+      const key=diff===0?'Oggi':diff===1?'Ieri':new Date(tx.date).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+      (groups[key]||=[]).push(tx);
+    }
+    return (
+      <div style={{padding:'0 18px 150px'}}>
+        <div style={{paddingTop:14,paddingBottom:18}}>
+          <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>Tutti i movimenti</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Movimenti</div>
+        </div>
+        {Object.entries(groups).map(([label,txs])=>{
+          const sum=txs.reduce((s,t)=>s+(t.type==='in'?1:-1)*t.amount,0);
+          return (
+            <div key={label} style={{marginBottom:20}}>
+              <div style={{display:'flex',justifyContent:'space-between',padding:'0 4px 8px',
+                fontSize:11,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.45)',fontWeight:600}}>
+                <span>{label}</span>
+                <span style={{fontFamily:'ui-monospace,Menlo,monospace',color:sum>=0?'#4a6741':'rgba(0,0,0,0.45)'}}>
+                  {sum>=0?'+':'−'}{Math.abs(sum).toFixed(0)}€
+                </span>
+              </div>
+              <div style={{background:'#fff',borderRadius:20,padding:'0 14px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
+                {txs.map((tx,i)=><TxRow key={tx.id} tx={tx} last={i===txs.length-1} onDelete={onDelete}/>)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  Object.assign(window,{TxListScreen});
+</script>
+
+<!-- ─── MAIN APP ────────────────────────────────────────────── -->
+<script type="text/babel">
+  function TabBar({ tab, setTab, onAdd }) {
+    // 5 tab reali + FAB centrale (nessuno slot fisso)
+    const tabs = [
+      { id:'home',   icon:Icon.home,   label:'Saldo'      },
+      { id:'charts', icon:Icon.chart,  label:'Statistiche'},
+      { id:'goals',  icon:Icon.target, label:'Obiettivi'  },
+      { id:'debts',  icon:Icon.clock,  label:'Da pagare'  },
+      { id:'txs',    icon:Icon.wallet, label:'Movimenti'  },
+    ];
+    return (
+      <div style={{flexShrink:0,paddingBottom:'max(10px,env(safe-area-inset-bottom))'}}>
+        <div style={{
+          margin:'0 12px 10px',position:'relative',
+          background:'rgba(250,250,247,0.94)',
+          backdropFilter:'blur(28px) saturate(200%)',
+          WebkitBackdropFilter:'blur(28px) saturate(200%)',
+          border:'0.5px solid rgba(0,0,0,0.07)',
+          borderRadius:30, padding:'6px 4px',
+          display:'flex', alignItems:'center',
+          boxShadow:'0 8px 30px rgba(0,0,0,0.08)',
+        }}>
+          {/* FAB sopra il centro */}
+          <button onClick={onAdd} style={{
+            all:'unset',cursor:'pointer',
+            position:'absolute',left:'50%',top:-22,transform:'translateX(-50%)',
+            width:56,height:56,borderRadius:999,
+            background:'#111',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            boxShadow:'0 6px 20px rgba(0,0,0,0.25),0 2px 6px rgba(0,0,0,0.12)',
+            zIndex:10,
+          }}
+          onTouchStart={e=>e.currentTarget.style.transform='translateX(-50%) scale(0.92)'}
+          onTouchEnd={e=>e.currentTarget.style.transform='translateX(-50%) scale(1)'}
+          >{Icon.plus(26,'#fff')}</button>
+
+          {tabs.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              all:'unset',cursor:'pointer',flex:1,
+              display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'6px 0',
+            }}>
+              <div style={{opacity:tab===t.id?1:0.3,transition:'opacity 0.18s'}}>
+                {t.icon(21,'#111')}
+              </div>
+              <div style={{fontSize:9,fontWeight:tab===t.id?700:500,letterSpacing:0.1,
+                color:tab===t.id?'#111':'rgba(0,0,0,0.35)',transition:'color 0.18s',
+                whiteSpace:'nowrap'}}>
+                {t.label}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function App() {
+    const [tab,          setTab]          = useState(()=>localStorage.getItem('fin.tab')||'home');
+    const [modalOpen,    setModalOpen]    = useState(false);
+    const [transactions, setTransactions] = useState(loadTransactions);
+    const [baseBalances, setBaseBalances] = useState(loadBaseBalances);
+    const [goals,        setGoals]        = useState(loadGoals);
+    const [debts,        setDebts]        = useState(loadDebts);
+    const [activeFilter, setActiveFilter] = useState('all');
+    const [flashTotal,   setFlashTotal]   = useState(false);
+    const [editAccount,  setEditAccount]  = useState(null);
+    const [newGoalOpen,  setNewGoalOpen]  = useState(false);
+    const [newDebtOpen,  setNewDebtOpen]  = useState(false);
+
+    useEffect(()=>{localStorage.setItem('fin.tab',tab);},[tab]);
+
+    const accent   = ACCENTS.sage;
+    const balances = useMemo(()=>computeBalances(transactions,baseBalances),[transactions,baseBalances]);
+
+    const addTx = useCallback(data=>{
+      const updated=[{id:Date.now(),...data,date:new Date()},...transactions];
+      setTransactions(updated); lsSet('finanze.txs',updated);
+      setFlashTotal(true); setTimeout(()=>setFlashTotal(false),600);
+    },[transactions]);
+
+    const deleteTx = useCallback(id=>{
+      const u=transactions.filter(t=>t.id!==id); setTransactions(u); lsSet('finanze.txs',u);
+    },[transactions]);
+
+    const handleSaveBalance = useCallback((key,newActual)=>{
+      const delta=transactions.filter(t=>t.account===key).reduce((s,t)=>s+(t.type==='in'?t.amount:-t.amount),0);
+      const u={...baseBalances,[key]:newActual-delta};
+      setBaseBalances(u); lsSet('finanze.bases',u);
+    },[transactions,baseBalances]);
+
+    const addGoal = (name,target)=>{
+      const u=[...goals,{id:Date.now(),name,current:0,target}];
+      setGoals(u); lsSet('finanze.goals',u);
+    };
+
+    const addDebt = data=>{
+      const u=[{id:Date.now(),paid:false,paidDate:null,...data},...debts];
+      setDebts(u); lsSet('finanze.debts',u);
+    };
+
+    // qualsiasi modal aperto → nascondi la tab bar
+    const anyModalOpen = modalOpen || editAccount!==null || newGoalOpen || newDebtOpen;
+
+    let screen;
+    if(tab==='home')
+      screen=<HomeScreen transactions={transactions} balances={balances} accent={accent}
+        onAdd={()=>setModalOpen(true)} onOpenTx={()=>setTab('txs')}
+        activeFilter={activeFilter} setActiveFilter={setActiveFilter}
+        onEditBalance={k=>setEditAccount(k)}/>;
+    else if(tab==='charts')
+      screen=<ChartScreen transactions={transactions} balances={balances} accent={accent} baseBalances={baseBalances}/>;
+    else if(tab==='goals')
+      screen=<GoalsScreen goals={goals} setGoals={setGoals} accent={accent}/>;
+    else if(tab==='debts')
+      screen=<DebtsScreen debts={debts} setDebts={setDebts} onNewDebt={()=>setNewDebtOpen(true)}/>;
+    else if(tab==='txs')
+      screen=<TxListScreen transactions={transactions} onDelete={deleteTx}/>;
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',height:'100dvh',
+        background:'#fafaf7',overflow:'hidden',
+        paddingTop:'env(safe-area-inset-top)',
+        paddingLeft:'env(safe-area-inset-left)',
+        paddingRight:'env(safe-area-inset-right)',
+      }}>
+        <div className="scroll-area" style={{
+          flex:1,
+          transition:'filter 0.3s',
+          filter:flashTotal?'brightness(1.025)':'none',
+        }}>
+          {screen}
+        </div>
+
+        {/* Tab bar — nascosta quando c'è un modal aperto */}
+        <div style={{
+          flexShrink:0,
+          maxHeight:anyModalOpen?0:'120px',
+          overflow:'hidden',
+          transition:'max-height 0.3s ease',
+          pointerEvents:anyModalOpen?'none':'auto',
+        }}>
+          <TabBar tab={tab} setTab={setTab} onAdd={()=>setModalOpen(true)}/>
+        </div>
+
+        {/* Pulsante "Nuovo obiettivo" nella schermata Goals */}
+        {tab==='goals'&&!anyModalOpen&&(
+          <div style={{position:'fixed',bottom:'max(90px,calc(80px + env(safe-area-inset-bottom)))',
+            right:20,zIndex:50}}>
+            <button onClick={()=>setNewGoalOpen(true)} style={{
+              all:'unset',cursor:'pointer',
+              background:'#fff',border:'0.5px solid rgba(0,0,0,0.1)',
+              borderRadius:999,padding:'10px 18px',
+              fontSize:14,fontWeight:700,color:'#111',
+              boxShadow:'0 4px 16px rgba(0,0,0,0.1)',
+              display:'flex',alignItems:'center',gap:6,
+            }}>
+              {Icon.plus(16,'#111')} Obiettivo
+            </button>
+          </div>
+        )}
+
+        <AddModal     open={modalOpen}    onClose={()=>setModalOpen(false)}    onSubmit={addTx}  accent={accent}/>
+        <NewGoalModal open={newGoalOpen}  onClose={()=>setNewGoalOpen(false)}  onAdd={addGoal}/>
+        <NewDebtModal open={newDebtOpen}  onClose={()=>setNewDebtOpen(false)}  onAdd={addDebt}/>
+        <EditBalanceModal
+          open={editAccount!==null}
+          onClose={()=>setEditAccount(null)}
+          account={editAccount}
+          currentBalance={editAccount?balances[editAccount]:0}
+          onSave={n=>handleSaveBalance(editAccount,n)}
+        />
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
 </body>
 </html>
