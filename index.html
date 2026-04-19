@@ -128,6 +128,11 @@
     { id:3, name:'Prestito a Marco',  amount:50,    dueDate:'2026-05-10', category:'Prestito',    paid:false, paidDate:null },
     { id:4, name:'Netflix',           amount:15.99, dueDate:'2026-04-20', category:'Abbonamento', paid:true,  paidDate:'2026-04-19' },
   ];
+  const INCOME_CATS = ['Stipendio','Freelance','Affitto ricevuto','Rimborso','Bonus','Altro'];
+  const SEED_RECEIVABLES = [
+    { id:1, name:'Stipendio',    amount:1800, expectedDate:'2026-04-30', category:'Stipendio', account:'card', received:false, receivedDate:null },
+    { id:2, name:'Freelance',    amount:350,  expectedDate:'2026-04-28', category:'Freelance',  account:'card', received:false, receivedDate:null },
+  ];
 
   // ── localStorage ──────────────────────────────────────────
   function ls(key, fallback) {
@@ -144,6 +149,7 @@
   const loadGoals        = () => ls('finanze.goals', SEED_GOALS);
   const loadBaseBalances = () => ls('finanze.bases', {...INITIAL_BALANCES});
   const loadDebts        = () => ls('finanze.debts', SEED_DEBTS);
+  const loadReceivables  = () => ls('finanze.receivables', SEED_RECEIVABLES);
 
   // ── computation ───────────────────────────────────────────
   function computeBalances(transactions, baseBalances) {
@@ -178,8 +184,8 @@
 
   Object.assign(window, {
     fmtEUR, fmtShort, dateDiffDays, getDayGreeting, getDueStatus,
-    ACCOUNTS, CATEGORIES, ACCENTS, DEBT_CATS,
-    loadTransactions, loadGoals, loadBaseBalances, loadDebts,
+    ACCOUNTS, CATEGORIES, ACCENTS, DEBT_CATS, INCOME_CATS,
+    loadTransactions, loadGoals, loadBaseBalances, loadDebts, loadReceivables,
     computeBalances, computeDaily, buildMonthlyHistory, lsSet,
   });
 </script>
@@ -515,6 +521,14 @@
     return (
       <BottomSheet open={open} onClose={onClose} zIndex={200}>
         <div style={{padding:'0 20px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div style={{fontSize:17,fontWeight:700}}>Nuovo movimento</div>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',width:34,height:34,
+              display:'flex',alignItems:'center',justifyContent:'center',
+              borderRadius:999,background:'rgba(0,0,0,0.07)'}}>
+              {Icon.close(16)}
+            </button>
+          </div>
           <div style={{display:'flex',background:'#ede8dc',borderRadius:14,padding:3,marginBottom:16,position:'relative'}}>
             <div style={{position:'absolute',top:3,bottom:3,width:'calc(50% - 3px)',
               left:type==='out'?3:'calc(50%)',background:'#fff',borderRadius:11,
@@ -637,7 +651,7 @@
     const catList=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
     const catTotal=catList.reduce((s,[,v])=>s+v,0)||1;
     return (
-      <div style={{padding:'0 18px 150px'}}>
+      <div style={{padding:'0 18px 24px'}}>
         <div style={{paddingTop:14,paddingBottom:18}}>
           <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>Statistiche</div>
           <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Andamento</div>
@@ -706,7 +720,7 @@
   // ── Obiettivi ─────────────────────────────────────────────
   function GoalsScreen({ goals, setGoals, accent }) {
     return (
-      <div style={{padding:'0 18px 150px'}}>
+      <div style={{padding:'0 18px 24px'}}>
         <div style={{paddingTop:14,paddingBottom:18}}>
           <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>I tuoi traguardi</div>
           <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Obiettivi</div>
@@ -800,8 +814,76 @@
   Object.assign(window,{NewGoalModal});
 </script>
 
-<!-- ─── DA PAGARE SCREEN ───────────────────────────────────── -->
+<!-- ─── DA PAGARE / DA RICEVERE SCREEN ────────────────────── -->
 <script type="text/babel">
+  function NewReceivableModal({ open, onClose, onAdd }) {
+    const [name,    setName]    = useState('');
+    const [amount,  setAmount]  = useState('');
+    const [expDate, setExpDate] = useState('');
+    const [cat,     setCat]     = useState('Stipendio');
+    const [account, setAccount] = useState('card');
+
+    useEffect(()=>{ if(!open) setTimeout(()=>{setName('');setAmount('');setExpDate('');setCat('Stipendio');setAccount('card');},360); },[open]);
+    useEffect(()=>{
+      if(open && !expDate) {
+        const now=new Date(); const end=new Date(now.getFullYear(),now.getMonth()+1,0);
+        setExpDate(end.toISOString().slice(0,10));
+      }
+    },[open]);
+
+    const confirm = ()=>{
+      const n=parseFloat(amount);
+      if(!name.trim()||isNaN(n)||n<=0||!expDate) return;
+      onAdd({name:name.trim(),amount:n,expectedDate:expDate,category:cat,account,received:false,receivedDate:null});
+      onClose();
+    };
+    return (
+      <BottomSheet open={open} onClose={onClose} zIndex={400}>
+        <div style={{padding:'6px 22px 0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+            <div style={{fontSize:18,fontWeight:700}}>Entrata attesa</div>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',width:32,height:32,
+              display:'flex',alignItems:'center',justifyContent:'center',
+              borderRadius:999,background:'rgba(0,0,0,0.06)'}}>{Icon.close(16)}</button>
+          </div>
+          <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Descrizione</div>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Es. Stipendio, Freelance..."
+            style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:14,
+              padding:'14px 16px',fontSize:15,marginBottom:16,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)'}}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+            <div>
+              <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Importo (€)</div>
+              <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0,00"
+                type="number" inputMode="decimal"
+                style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:14,
+                  padding:'14px 16px',fontSize:15,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)'}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Data prevista</div>
+              <input value={expDate} onChange={e=>setExpDate(e.target.value)} type="date"
+                style={{width:'100%',border:'none',outline:'none',background:'#fff',borderRadius:14,
+                  padding:'14px 12px',fontSize:13,boxShadow:'0 0 0 0.5px rgba(0,0,0,0.1)',color:'#111'}}/>
+            </div>
+          </div>
+          <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Categoria</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+            {INCOME_CATS.map(c=><Chip key={c} label={c} active={cat===c} onClick={()=>setCat(c)}/>)}
+          </div>
+          <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:0.6,color:'rgba(0,0,0,0.4)',fontWeight:600,marginBottom:8}}>Accredito su</div>
+          <div style={{display:'flex',gap:6,marginBottom:20}}>
+            {ACCOUNTS.map(a=><Chip key={a.key} label={a.label} active={account===a.key} onClick={()=>setAccount(a.key)}/>)}
+          </div>
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={onClose} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'15px 0',background:'#ede8dc',borderRadius:14,fontSize:15,fontWeight:600}}>Annulla</button>
+            <button onClick={confirm} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'15px 0',background:'#4a6741',color:'#fff',borderRadius:14,fontSize:15,fontWeight:700}}>Aggiungi</button>
+          </div>
+        </div>
+      </BottomSheet>
+    );
+  }
+
   function NewDebtModal({ open, onClose, onAdd }) {
     const [name,    setName]    = useState('');
     const [amount,  setAmount]  = useState('');
@@ -938,78 +1020,191 @@
     );
   }
 
-  function DebtsScreen({ debts, setDebts, onNewDebt }) {
+  function ReceivableCard({ rec, onReceive, onDelete }) {
+    const status = getDueStatus(rec.expectedDate);
+    const acct = ACCOUNTS.find(a=>a.key===rec.account)?.label??rec.account;
+    return (
+      <div style={{background:'rgba(74,103,65,0.04)',borderRadius:20,padding:'16px 18px',
+        border:'0.5px solid rgba(74,103,65,0.14)',marginBottom:10}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,marginBottom:4}}>{rec.name}</div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:12,color:status.color,fontWeight:500}}>{status.label}</span>
+              <span style={{fontSize:11,color:'rgba(0,0,0,0.35)'}}>· {rec.category} · {acct}</span>
+            </div>
+          </div>
+          <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:20,fontWeight:500,
+            fontFeatureSettings:'"tnum"',color:'#4a6741',flexShrink:0,marginLeft:12}}>
+            +{fmtEUR(rec.amount)}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>onReceive(rec.id)} style={{all:'unset',cursor:'pointer',
+            display:'flex',alignItems:'center',gap:6,
+            flex:1,justifyContent:'center',
+            padding:'10px 0',background:'#4a6741',color:'#fff',
+            borderRadius:12,fontSize:13,fontWeight:700}}>
+            {Icon.check(15,'#fff')} Ricevuto
+          </button>
+          <button onClick={()=>onDelete(rec.id)} style={{all:'unset',cursor:'pointer',
+            width:42,height:42,display:'flex',alignItems:'center',justifyContent:'center',
+            borderRadius:12,background:'rgba(184,92,78,0.08)'}}>
+            {Icon.trash(16)}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function DebtsScreen({ debts, setDebts, onNewDebt, receivables, setReceivables, onNewReceivable, onReceived }) {
+    const [view, setView] = useState('out'); // 'out' = da pagare, 'in' = da ricevere
+
     const pending = debts.filter(d=>!d.paid).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
     const paid    = debts.filter(d=>d.paid).sort((a,b)=>new Date(b.paidDate||0)-new Date(a.paidDate||0));
     const totalDue = pending.reduce((s,d)=>s+d.amount,0);
-
     const overdueCount = pending.filter(d=>getDueStatus(d.dueDate).level==='overdue').length;
+
+    const expected    = receivables.filter(r=>!r.received).sort((a,b)=>new Date(a.expectedDate)-new Date(b.expectedDate));
+    const rcvd        = receivables.filter(r=>r.received).sort((a,b)=>new Date(b.receivedDate||0)-new Date(a.receivedDate||0));
+    const totalExpected = expected.reduce((s,r)=>s+r.amount,0);
 
     const payDebt = id=>{
       const u=debts.map(d=>d.id===id?{...d,paid:true,paidDate:new Date().toISOString().slice(0,10)}:d);
       setDebts(u); lsSet('finanze.debts',u);
     };
-    const deleteDebt = id=>{
-      const u=debts.filter(d=>d.id!==id); setDebts(u); lsSet('finanze.debts',u);
-    };
+    const deleteDebt = id=>{ const u=debts.filter(d=>d.id!==id); setDebts(u); lsSet('finanze.debts',u); };
+    const deleteRec  = id=>{ const u=receivables.filter(r=>r.id!==id); setReceivables(u); lsSet('finanze.receivables',u); };
 
     return (
-      <div style={{padding:'0 18px 150px'}}>
-        <div style={{paddingTop:14,paddingBottom:18}}>
+      <div style={{padding:'0 18px 24px'}}>
+        <div style={{paddingTop:14,paddingBottom:14}}>
           <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>Scadenze e impegni</div>
-          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Da pagare</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Pagamenti</div>
         </div>
 
-        {/* Summary */}
-        {pending.length>0&&<div style={{background:overdueCount>0?'rgba(184,92,78,0.06)':'#fff',
-          borderRadius:22,padding:'18px 20px',marginBottom:20,
-          border:`0.5px solid ${overdueCount>0?'rgba(184,92,78,0.18)':'rgba(0,0,0,0.06)'}`}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div>
-              <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.6,fontWeight:600,marginBottom:6}}>Totale da pagare</div>
-              <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(28px,8vw,36px)',fontWeight:500,
-                letterSpacing:-1,fontFeatureSettings:'"tnum"',color:overdueCount>0?'#b85c4e':'#111'}}>
-                {fmtEUR(totalDue)}
+        {/* Toggle */}
+        <div style={{display:'flex',background:'#ede8dc',borderRadius:14,padding:3,marginBottom:20,position:'relative'}}>
+          <div style={{position:'absolute',top:3,bottom:3,width:'calc(50% - 3px)',
+            left:view==='out'?3:'calc(50%)',background:'#fff',borderRadius:11,
+            boxShadow:'0 1px 3px rgba(0,0,0,0.08)',transition:'left 0.2s cubic-bezier(0.32,0.72,0,1)'}}/>
+          {[['out','Da pagare'],['in','Da ricevere']].map(([v,lbl])=>(
+            <button key={v} onClick={()=>setView(v)} style={{all:'unset',cursor:'pointer',flex:1,textAlign:'center',
+              padding:'9px 0',fontSize:14,fontWeight:600,position:'relative',
+              color:view===v?'#111':'rgba(0,0,0,0.45)'}}>{lbl}</button>
+          ))}
+        </div>
+
+        {view==='out'?(
+          <>
+            {pending.length>0&&<div style={{background:overdueCount>0?'rgba(184,92,78,0.06)':'#fff',
+              borderRadius:22,padding:'16px 20px',marginBottom:16,
+              border:`0.5px solid ${overdueCount>0?'rgba(184,92,78,0.18)':'rgba(0,0,0,0.06)'}`}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.6,fontWeight:600,marginBottom:4}}>Totale da pagare</div>
+                  <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(26px,7vw,34px)',fontWeight:500,
+                    letterSpacing:-1,fontFeatureSettings:'"tnum"',color:overdueCount>0?'#b85c4e':'#111'}}>
+                    {fmtEUR(totalDue)}
+                  </div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:20,fontWeight:700,color:overdueCount>0?'#b85c4e':'#111'}}>{pending.length}</div>
+                  <div style={{fontSize:12,color:'rgba(0,0,0,0.45)'}}>
+                    {pending.length===1?'impegno':'impegni'}{overdueCount>0&&<span style={{color:'#b85c4e',fontWeight:600}}> · {overdueCount} scad.</span>}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style={{textAlign:'right'}}>
-              <div style={{fontSize:22,fontWeight:700,color:overdueCount>0?'#b85c4e':'#111'}}>{pending.length}</div>
-              <div style={{fontSize:12,color:'rgba(0,0,0,0.45)'}}>
-                {pending.length===1?'impegno':'impegni'}{overdueCount>0?<span style={{color:'#b85c4e',fontWeight:600}}> · {overdueCount} scaduti</span>:null}
+            </div>}
+            {pending.length===0
+              ?<div style={{textAlign:'center',padding:'36px 0',color:'rgba(0,0,0,0.35)'}}>
+                <div style={{fontSize:30,marginBottom:10}}>✓</div>
+                <div style={{fontSize:15,fontWeight:600,marginBottom:4}}>Tutto in regola</div>
+                <div style={{fontSize:13}}>Nessun impegno da pagare</div>
               </div>
-            </div>
-          </div>
-        </div>}
-
-        {/* Lista pending */}
-        {pending.length===0?(
-          <div style={{textAlign:'center',padding:'40px 0',color:'rgba(0,0,0,0.35)'}}>
-            <div style={{fontSize:32,marginBottom:12}}>✓</div>
-            <div style={{fontSize:15,fontWeight:600,marginBottom:4}}>Tutto in regola</div>
-            <div style={{fontSize:13}}>Nessun impegno da pagare</div>
-          </div>
-        ):pending.map(d=><DebtCard key={d.id} debt={d} onPay={payDebt} onDelete={deleteDebt}/>)}
-
-        {/* Aggiungi */}
-        <button onClick={onNewDebt} style={{all:'unset',cursor:'pointer',display:'block',width:'100%',
-          textAlign:'center',padding:'14px 0',marginTop:4,marginBottom:24,
-          background:'#fff',border:'0.5px dashed rgba(0,0,0,0.18)',
-          borderRadius:18,fontSize:14,color:'rgba(0,0,0,0.55)',fontWeight:600}}>
-          + Aggiungi impegno
-        </button>
-
-        {/* Pagati */}
-        {paid.length>0&&<>
-          <div style={{fontSize:13,fontWeight:600,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',
-            letterSpacing:0.5,marginBottom:10}}>Pagati di recente</div>
-          <div style={{background:'#fff',borderRadius:20,padding:'0 14px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
-            {paid.slice(0,5).map((d,i)=><PaidDebtRow key={d.id} debt={d} onDelete={deleteDebt} last={i===Math.min(4,paid.length-1)}/>)}
-          </div>
-        </>}
+              :pending.map(d=><DebtCard key={d.id} debt={d} onPay={payDebt} onDelete={deleteDebt}/>)
+            }
+            <button onClick={onNewDebt} style={{all:'unset',cursor:'pointer',display:'block',width:'100%',
+              textAlign:'center',padding:'14px 0',marginTop:4,marginBottom:20,
+              background:'#fff',border:'0.5px dashed rgba(0,0,0,0.18)',
+              borderRadius:18,fontSize:14,color:'rgba(0,0,0,0.55)',fontWeight:600}}>
+              + Aggiungi impegno
+            </button>
+            {paid.length>0&&<>
+              <div style={{fontSize:12,fontWeight:600,color:'rgba(0,0,0,0.4)',textTransform:'uppercase',
+                letterSpacing:0.5,marginBottom:10}}>Pagati di recente</div>
+              <div style={{background:'#fff',borderRadius:20,padding:'0 14px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
+                {paid.slice(0,5).map((d,i)=><PaidDebtRow key={d.id} debt={d} onDelete={deleteDebt}/>)}
+              </div>
+            </>}
+          </>
+        ):(
+          <>
+            {expected.length>0&&<div style={{background:'rgba(74,103,65,0.05)',
+              borderRadius:22,padding:'16px 20px',marginBottom:16,
+              border:'0.5px solid rgba(74,103,65,0.18)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.6,fontWeight:600,marginBottom:4}}>Totale atteso</div>
+                  <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(26px,7vw,34px)',fontWeight:500,
+                    letterSpacing:-1,fontFeatureSettings:'"tnum"',color:'#4a6741'}}>
+                    +{fmtEUR(totalExpected)}
+                  </div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:20,fontWeight:700,color:'#4a6741'}}>{expected.length}</div>
+                  <div style={{fontSize:12,color:'rgba(0,0,0,0.45)'}}>{expected.length===1?'entrata':'entrate'}</div>
+                </div>
+              </div>
+            </div>}
+            {expected.length===0
+              ?<div style={{textAlign:'center',padding:'36px 0',color:'rgba(0,0,0,0.35)'}}>
+                <div style={{fontSize:30,marginBottom:10}}>↑</div>
+                <div style={{fontSize:15,fontWeight:600,marginBottom:4}}>Nessuna entrata attesa</div>
+                <div style={{fontSize:13}}>Aggiungi stipendi, freelance...</div>
+              </div>
+              :expected.map(r=><ReceivableCard key={r.id} rec={r} onReceive={onReceived} onDelete={deleteRec}/>)
+            }
+            <button onClick={onNewReceivable} style={{all:'unset',cursor:'pointer',display:'block',width:'100%',
+              textAlign:'center',padding:'14px 0',marginTop:4,marginBottom:20,
+              background:'rgba(74,103,65,0.06)',border:'0.5px dashed rgba(74,103,65,0.3)',
+              borderRadius:18,fontSize:14,color:'#4a6741',fontWeight:600}}>
+              + Aggiungi entrata attesa
+            </button>
+            {rcvd.length>0&&<>
+              <div style={{fontSize:12,fontWeight:600,color:'rgba(0,0,0,0.4)',textTransform:'uppercase',
+                letterSpacing:0.5,marginBottom:10}}>Ricevuti di recente</div>
+              <div style={{background:'#fff',borderRadius:20,padding:'0 14px',border:'0.5px solid rgba(0,0,0,0.06)'}}>
+                {rcvd.slice(0,5).map((r,i)=>(
+                  <div key={r.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',
+                    borderBottom:i<Math.min(4,rcvd.length-1)?'0.5px solid rgba(0,0,0,0.06)':'none'}}>
+                    <div style={{width:34,height:34,borderRadius:999,flexShrink:0,
+                      background:'rgba(74,103,65,0.1)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      {Icon.arrowUp(14,'#4a6741')}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:500,textDecoration:'line-through',color:'rgba(0,0,0,0.4)',marginBottom:2}}>{r.name}</div>
+                      <div style={{fontSize:12,color:'rgba(0,0,0,0.35)'}}>
+                        {r.receivedDate?`Ricevuto il ${new Date(r.receivedDate).toLocaleDateString('it-IT',{day:'numeric',month:'short'})}`:'Ricevuto'}
+                      </div>
+                    </div>
+                    <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:15,fontWeight:500,
+                      color:'rgba(0,0,0,0.35)',fontFeatureSettings:'"tnum"',flexShrink:0}}>
+                      +{fmtEUR(r.amount)}
+                    </div>
+                    <button onClick={()=>deleteRec(r.id)} style={{all:'unset',cursor:'pointer',
+                      width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',
+                      borderRadius:8,background:'rgba(184,92,78,0.06)'}}>{Icon.trash(14)}</button>
+                  </div>
+                ))}
+              </div>
+            </>}
+          </>
+        )}
       </div>
     );
   }
-  Object.assign(window,{DebtsScreen,NewDebtModal});
+  Object.assign(window,{DebtsScreen,NewDebtModal,NewReceivableModal});
 </script>
 
 <!-- ─── MOVIMENTI SCREEN ───────────────────────────────────── -->
@@ -1023,7 +1218,7 @@
       (groups[key]||=[]).push(tx);
     }
     return (
-      <div style={{padding:'0 18px 150px'}}>
+      <div style={{padding:'0 18px 24px'}}>
         <div style={{paddingTop:14,paddingBottom:18}}>
           <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>Tutti i movimenti</div>
           <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Movimenti</div>
@@ -1119,11 +1314,13 @@
     const [baseBalances, setBaseBalances] = useState(loadBaseBalances);
     const [goals,        setGoals]        = useState(loadGoals);
     const [debts,        setDebts]        = useState(loadDebts);
+    const [receivables,  setReceivables]  = useState(loadReceivables);
     const [activeFilter, setActiveFilter] = useState('all');
     const [flashTotal,   setFlashTotal]   = useState(false);
     const [editAccount,  setEditAccount]  = useState(null);
     const [newGoalOpen,  setNewGoalOpen]  = useState(false);
     const [newDebtOpen,  setNewDebtOpen]  = useState(false);
+    const [newRecOpen,   setNewRecOpen]   = useState(false);
 
     useEffect(()=>{localStorage.setItem('fin.tab',tab);},[tab]);
 
@@ -1156,8 +1353,25 @@
       setDebts(u); lsSet('finanze.debts',u);
     };
 
-    // qualsiasi modal aperto → nascondi la tab bar
-    const anyModalOpen = modalOpen || editAccount!==null || newGoalOpen || newDebtOpen;
+    const addReceivable = data=>{
+      const u=[{id:Date.now(),...data},...receivables];
+      setReceivables(u); lsSet('finanze.receivables',u);
+    };
+
+    const markReceived = id=>{
+      const rec = receivables.find(r=>r.id===id);
+      if(!rec) return;
+      // mark as received
+      const uRec = receivables.map(r=>r.id===id?{...r,received:true,receivedDate:new Date().toISOString().slice(0,10)}:r);
+      setReceivables(uRec); lsSet('finanze.receivables',uRec);
+      // auto-create transaction
+      const newTx = {id:Date.now(),type:'in',account:rec.account,category:rec.category,amount:rec.amount,note:rec.name,date:new Date()};
+      const uTx = [newTx,...transactions];
+      setTransactions(uTx); lsSet('finanze.txs',uTx);
+      setFlashTotal(true); setTimeout(()=>setFlashTotal(false),600);
+    };
+
+    const anyModalOpen = modalOpen || editAccount!==null || newGoalOpen || newDebtOpen || newRecOpen;
 
     let screen;
     if(tab==='home')
@@ -1170,19 +1384,22 @@
     else if(tab==='goals')
       screen=<GoalsScreen goals={goals} setGoals={setGoals} accent={accent}/>;
     else if(tab==='debts')
-      screen=<DebtsScreen debts={debts} setDebts={setDebts} onNewDebt={()=>setNewDebtOpen(true)}/>;
+      screen=<DebtsScreen debts={debts} setDebts={setDebts} onNewDebt={()=>setNewDebtOpen(true)}
+        receivables={receivables} setReceivables={setReceivables}
+        onNewReceivable={()=>setNewRecOpen(true)} onReceived={markReceived}/>;
     else if(tab==='txs')
       screen=<TxListScreen transactions={transactions} onDelete={deleteTx}/>;
 
     return (
       <div style={{
-        position:'fixed', inset:0, background:'#fafaf7',
+        display:'flex', flexDirection:'column',
+        height:'100dvh', background:'#fafaf7',
         paddingTop:'env(safe-area-inset-top)',
       }}>
-        {/* Scrollable content — padding bottom leaves room for fixed tab bar */}
+        {/* Scrollable content */}
         <div className="scroll-area" style={{
-          position:'absolute', inset:0,
-          paddingBottom:110,
+          flex:1,
+          paddingBottom:'calc(env(safe-area-inset-bottom) + 90px)',
           transition:'filter 0.3s',
           filter:flashTotal?'brightness(1.025)':'none',
         }}>
@@ -1209,9 +1426,10 @@
           </div>
         )}
 
-        <AddModal     open={modalOpen}    onClose={()=>setModalOpen(false)}    onSubmit={addTx}  accent={accent}/>
-        <NewGoalModal open={newGoalOpen}  onClose={()=>setNewGoalOpen(false)}  onAdd={addGoal}/>
-        <NewDebtModal open={newDebtOpen}  onClose={()=>setNewDebtOpen(false)}  onAdd={addDebt}/>
+        <AddModal          open={modalOpen}   onClose={()=>setModalOpen(false)}   onSubmit={addTx} accent={accent}/>
+        <NewGoalModal      open={newGoalOpen} onClose={()=>setNewGoalOpen(false)} onAdd={addGoal}/>
+        <NewDebtModal      open={newDebtOpen} onClose={()=>setNewDebtOpen(false)} onAdd={addDebt}/>
+        <NewReceivableModal open={newRecOpen} onClose={()=>setNewRecOpen(false)}  onAdd={addReceivable}/>
         <EditBalanceModal
           open={editAccount!==null}
           onClose={()=>setEditAccount(null)}
