@@ -16,18 +16,24 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; }
+    html { height: 100%; overflow: hidden; }
     body {
       font-family: 'Inter Tight', -apple-system, system-ui, sans-serif;
       background: #fafaf7; color: #111;
       -webkit-font-smoothing: antialiased;
       overscroll-behavior: none;
+      /* iOS scroll bounce fix */
+      position: fixed; width: 100%; height: 100%; overflow: hidden;
     }
-    #root { height: 100dvh; display: flex; flex-direction: column; }
+    #root { position: fixed; inset: 0; overflow: hidden; background: #fafaf7; }
     button, input, textarea { font-family: inherit; -webkit-tap-highlight-color: transparent; }
     ::-webkit-scrollbar { width: 0; height: 0; }
     input { -webkit-appearance: none; border-radius: 0; }
-    .scroll-area { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+    .scroll-area {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+    }
   </style>
   <script>
     if ('serviceWorker' in navigator)
@@ -132,7 +138,7 @@
 
   function loadTransactions() {
     const arr = ls('finanze.txs', null);
-    if (arr?.length>0) return arr.map(t=>({...t,date:new Date(t.date)}));
+    if (arr !== null) return arr.map(t=>({...t,date:new Date(t.date)}));
     return SEED_TXS;
   }
   const loadGoals        = () => ls('finanze.goals', SEED_GOALS);
@@ -404,8 +410,10 @@
     );
   }
 
-  function HomeScreen({ transactions, balances, accent, onAdd, onOpenTx, activeFilter, setActiveFilter, onEditBalance }) {
+  function HomeScreen({ transactions, balances, debts, accent, onAdd, onOpenTx, activeFilter, setActiveFilter, onEditBalance }) {
     const total = balances.cash+balances.card+balances.invest;
+    const pendingDebts = debts.filter(d=>!d.paid).reduce((s,d)=>s+d.amount, 0);
+    const available = total - pendingDebts;
     const daily = computeDaily(transactions);
     const weekIn  = daily.reduce((s,d)=>s+d.in, 0);
     const weekOut = daily.reduce((s,d)=>s+d.out, 0);
@@ -413,20 +421,24 @@
     const shown = (activeFilter==='all'?transactions:transactions.filter(t=>t.account===activeFilter))
       .slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,7);
     return (
-      <div style={{padding:'0 18px 150px'}}>
-        <div style={{paddingTop:14,paddingBottom:22}}>
+      <div style={{padding:'0 18px 20px'}}>
+        <div style={{paddingTop:14,paddingBottom:20}}>
           <div style={{fontSize:13,color:'rgba(0,0,0,0.45)',marginBottom:3}}>{saluto} — {giorno}</div>
           <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>Le tue finanze</div>
         </div>
 
         <div style={{marginBottom:22}}>
-          <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.8,marginBottom:8,fontWeight:600}}>Saldo totale</div>
-          <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:14}}>
-            <div style={{fontFamily:'Fraunces,Georgia,serif',fontWeight:500,fontSize:'clamp(44px,14vw,60px)',letterSpacing:-2,lineHeight:1,fontFeatureSettings:'"tnum"'}}>
-              {total.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}
+          <div style={{fontSize:11,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:0.8,marginBottom:8,fontWeight:600}}>Disponibile</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
+            <div style={{fontFamily:'Fraunces,Georgia,serif',fontWeight:500,fontSize:'clamp(44px,14vw,60px)',letterSpacing:-2,lineHeight:1,fontFeatureSettings:'"tnum"',color:available<0?'#b85c4e':'#111'}}>
+              {available.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}
             </div>
             <div style={{fontFamily:'Fraunces,Georgia,serif',fontSize:'clamp(22px,6vw,30px)',fontWeight:400,opacity:0.45}}>€</div>
           </div>
+          {pendingDebts>0&&<div style={{fontSize:12,color:'rgba(0,0,0,0.45)',marginBottom:10,display:'flex',gap:6,alignItems:'center'}}>
+            <span>Saldo {total.toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:0})} €</span>
+            <span style={{color:'#b85c4e'}}>− {pendingDebts.toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:0})} € da pagare</span>
+          </div>}
           <div style={{display:'flex',gap:16,fontSize:13,alignItems:'center'}}>
             <span style={{color:'#4a6741',display:'inline-flex',alignItems:'center',gap:4}}>
               {Icon.arrowUp(12,'#4a6741')} +{weekIn.toFixed(0)} €
@@ -1042,53 +1054,57 @@
 <!-- ─── MAIN APP ────────────────────────────────────────────── -->
 <script type="text/babel">
   function TabBar({ tab, setTab, onAdd }) {
-    // 5 tab reali + FAB centrale (nessuno slot fisso)
     const tabs = [
-      { id:'home',   icon:Icon.home,   label:'Saldo'      },
-      { id:'charts', icon:Icon.chart,  label:'Statistiche'},
-      { id:'goals',  icon:Icon.target, label:'Obiettivi'  },
-      { id:'debts',  icon:Icon.clock,  label:'Da pagare'  },
-      { id:'txs',    icon:Icon.wallet, label:'Movimenti'  },
+      { id:'home',   icon:Icon.home,   label:'Saldo'    },
+      { id:'charts', icon:Icon.chart,  label:'Grafici'  },
+      { id:'goals',  icon:Icon.target, label:'Obiettivi'},
+      { id:'debts',  icon:Icon.clock,  label:'Scadenze' },
+      { id:'txs',    icon:Icon.wallet, label:'Movimenti'},
     ];
     return (
-      <div style={{flexShrink:0,paddingBottom:'max(10px,env(safe-area-inset-bottom))'}}>
+      <div style={{
+        position:'fixed', bottom:0, left:0, right:0, zIndex:100,
+        paddingBottom:'env(safe-area-inset-bottom)',
+        paddingLeft:'env(safe-area-inset-left)',
+        paddingRight:'env(safe-area-inset-right)',
+      }}>
         <div style={{
-          margin:'0 12px 10px',position:'relative',
-          background:'rgba(250,250,247,0.94)',
+          margin:'0 12px 10px', position:'relative',
+          background:'rgba(250,250,247,0.96)',
           backdropFilter:'blur(28px) saturate(200%)',
           WebkitBackdropFilter:'blur(28px) saturate(200%)',
           border:'0.5px solid rgba(0,0,0,0.07)',
-          borderRadius:30, padding:'6px 4px',
+          borderRadius:30, padding:'8px 4px',
           display:'flex', alignItems:'center',
-          boxShadow:'0 8px 30px rgba(0,0,0,0.08)',
+          boxShadow:'0 8px 30px rgba(0,0,0,0.10)',
         }}>
-          {/* FAB sopra il centro */}
+          {/* FAB above center — no overflow clip issues since parent has no overflow:hidden */}
           <button onClick={onAdd} style={{
-            all:'unset',cursor:'pointer',
-            position:'absolute',left:'50%',top:-22,transform:'translateX(-50%)',
-            width:56,height:56,borderRadius:999,
+            all:'unset', cursor:'pointer',
+            position:'absolute', left:'50%', top:-26, transform:'translateX(-50%)',
+            width:58, height:58, borderRadius:999,
             background:'#111',
-            display:'flex',alignItems:'center',justifyContent:'center',
-            boxShadow:'0 6px 20px rgba(0,0,0,0.25),0 2px 6px rgba(0,0,0,0.12)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            boxShadow:'0 6px 20px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.14)',
             zIndex:10,
           }}
-          onTouchStart={e=>e.currentTarget.style.transform='translateX(-50%) scale(0.92)'}
+          onTouchStart={e=>e.currentTarget.style.transform='translateX(-50%) scale(0.90)'}
           onTouchEnd={e=>e.currentTarget.style.transform='translateX(-50%) scale(1)'}
           >{Icon.plus(26,'#fff')}</button>
 
           {tabs.map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              all:'unset',cursor:'pointer',flex:1,
-              display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'6px 0',
+              all:'unset', cursor:'pointer', flex:1,
+              display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'4px 0',
             }}>
-              <div style={{opacity:tab===t.id?1:0.3,transition:'opacity 0.18s'}}>
-                {t.icon(21,'#111')}
+              <div style={{opacity:tab===t.id?1:0.28, transition:'opacity 0.18s'}}>
+                {t.icon(22,'#111')}
               </div>
-              <div style={{fontSize:9,fontWeight:tab===t.id?700:500,letterSpacing:0.1,
-                color:tab===t.id?'#111':'rgba(0,0,0,0.35)',transition:'color 0.18s',
-                whiteSpace:'nowrap'}}>
-                {t.label}
-              </div>
+              <div style={{
+                fontSize:9, fontWeight:tab===t.id?700:500, letterSpacing:0.1,
+                color:tab===t.id?'#111':'rgba(0,0,0,0.35)', transition:'color 0.18s',
+                whiteSpace:'nowrap',
+              }}>{t.label}</div>
             </button>
           ))}
         </div>
@@ -1145,7 +1161,7 @@
 
     let screen;
     if(tab==='home')
-      screen=<HomeScreen transactions={transactions} balances={balances} accent={accent}
+      screen=<HomeScreen transactions={transactions} balances={balances} debts={debts} accent={accent}
         onAdd={()=>setModalOpen(true)} onOpenTx={()=>setTab('txs')}
         activeFilter={activeFilter} setActiveFilter={setActiveFilter}
         onEditBalance={k=>setEditAccount(k)}/>;
@@ -1159,34 +1175,26 @@
       screen=<TxListScreen transactions={transactions} onDelete={deleteTx}/>;
 
     return (
-      <div style={{display:'flex',flexDirection:'column',height:'100dvh',
-        background:'#fafaf7',overflow:'hidden',
+      <div style={{
+        position:'fixed', inset:0, background:'#fafaf7',
         paddingTop:'env(safe-area-inset-top)',
-        paddingLeft:'env(safe-area-inset-left)',
-        paddingRight:'env(safe-area-inset-right)',
       }}>
+        {/* Scrollable content — padding bottom leaves room for fixed tab bar */}
         <div className="scroll-area" style={{
-          flex:1,
+          position:'absolute', inset:0,
+          paddingBottom:110,
           transition:'filter 0.3s',
           filter:flashTotal?'brightness(1.025)':'none',
         }}>
           {screen}
         </div>
 
-        {/* Tab bar — nascosta quando c'è un modal aperto */}
-        <div style={{
-          flexShrink:0,
-          maxHeight:anyModalOpen?0:'120px',
-          overflow:'hidden',
-          transition:'max-height 0.3s ease',
-          pointerEvents:anyModalOpen?'none':'auto',
-        }}>
-          <TabBar tab={tab} setTab={setTab} onAdd={()=>setModalOpen(true)}/>
-        </div>
+        {/* Tab bar è position:fixed internamente, modals con zIndex 200+ la coprono */}
+        <TabBar tab={tab} setTab={setTab} onAdd={()=>setModalOpen(true)}/>
 
         {/* Pulsante "Nuovo obiettivo" nella schermata Goals */}
         {tab==='goals'&&!anyModalOpen&&(
-          <div style={{position:'fixed',bottom:'max(90px,calc(80px + env(safe-area-inset-bottom)))',
+          <div style={{position:'fixed',bottom:'max(100px,calc(90px + env(safe-area-inset-bottom)))',
             right:20,zIndex:50}}>
             <button onClick={()=>setNewGoalOpen(true)} style={{
               all:'unset',cursor:'pointer',
