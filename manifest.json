@@ -1,0 +1,18 @@
+{
+  "name": "Le mie finanze",
+  "short_name": "Finanze",
+  "description": "Traccia entrate e uscite personali",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#fafaf7",
+  "theme_color": "#fafaf7",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
